@@ -26,8 +26,6 @@ import java.util.regex.Pattern;
 class DeterministicWrapperGenerator {
 
     private static final Set<String> HELPER_TYPE_NAMES = Set.of("ListNode", "TreeNode", "Node", "TreeLinkNode");
-    private static final Set<String> MODIFIER_WORDS =
-            Set.of("public", "private", "protected", "static", "final", "abstract", "strictfp");
 
     private static final Pattern METHOD_PATTERN = Pattern.compile(
             "((?:(?:public|private|protected|static|final|synchronized|abstract|native|strictfp)\\s+)*)"
@@ -133,9 +131,6 @@ class DeterministicWrapperGenerator {
                 }
             """;
 
-    record TopLevelClass(String name, boolean isPublic, int braceOpen, int braceClose) {
-    }
-
     record MethodInfo(String name, boolean isStatic, String returnType, List<String> paramTypes) {
     }
 
@@ -149,15 +144,15 @@ class DeterministicWrapperGenerator {
     }
 
     private Optional<String> attemptWrap(String sourceCode) {
-        String masked = maskNonCode(sourceCode);
-        List<TopLevelClass> classes = findTopLevelClasses(masked);
+        String masked = JavaSourceScanner.maskNonCode(sourceCode);
+        List<JavaSourceScanner.TopLevelClass> classes = JavaSourceScanner.findTopLevelClasses(masked);
         if (classes.isEmpty()) {
             return Optional.empty();
         }
 
-        TopLevelClass entryClass = null;
+        JavaSourceScanner.TopLevelClass entryClass = null;
         MethodInfo entryMethod = null;
-        for (TopLevelClass tc : classes) {
+        for (JavaSourceScanner.TopLevelClass tc : classes) {
             if (HELPER_TYPE_NAMES.contains(tc.name()) || tc.name().equals("Main")) {
                 continue;
             }
@@ -294,7 +289,7 @@ class DeterministicWrapperGenerator {
         return "System.out.println(" + varName + ");";
     }
 
-    private boolean hasParameterizedConstructor(String masked, TopLevelClass tc) {
+    private boolean hasParameterizedConstructor(String masked, JavaSourceScanner.TopLevelClass tc) {
         Pattern ctor = Pattern.compile(
                 "\\b" + Pattern.quote(tc.name()) + "\\s*\\(\\s*[^)]\\S*[^)]*\\)\\s*\\{");
         Matcher m = ctor.matcher(masked);
@@ -302,53 +297,13 @@ class DeterministicWrapperGenerator {
         return m.find();
     }
 
-    private String stripPublicModifiers(String sourceCode, List<TopLevelClass> classes) {
+    private String stripPublicModifiers(String sourceCode, List<JavaSourceScanner.TopLevelClass> classes) {
         String result = sourceCode;
-        for (TopLevelClass tc : classes) {
+        for (JavaSourceScanner.TopLevelClass tc : classes) {
             if (tc.isPublic()) {
                 result = result.replaceFirst(
                         "public(\\s+)class(\\s+)" + Pattern.quote(tc.name()) + "\\b", "class$2" + tc.name());
             }
-        }
-        return result;
-    }
-
-    private List<TopLevelClass> findTopLevelClasses(String masked) {
-        List<TopLevelClass> result = new ArrayList<>();
-        int depth = 0;
-        int n = masked.length();
-        int i = 0;
-        while (i < n) {
-            char c = masked.charAt(i);
-            if (c == '{') {
-                depth++;
-                i++;
-                continue;
-            }
-            if (c == '}') {
-                depth--;
-                i++;
-                continue;
-            }
-            if (depth == 0 && matchesKeywordAt(masked, i, "class")) {
-                Matcher m = Pattern.compile("class\\s+(\\w+)").matcher(masked);
-                m.region(i, n);
-                if (m.lookingAt()) {
-                    String className = m.group(1);
-                    int modifiersStart = findModifiersStart(masked, i);
-                    boolean isPublic = Pattern.compile("\\bpublic\\b")
-                            .matcher(masked.substring(modifiersStart, i)).find();
-                    int braceOpen = masked.indexOf('{', m.end());
-                    if (braceOpen < 0) {
-                        break;
-                    }
-                    int braceClose = findMatchingBrace(masked, braceOpen);
-                    result.add(new TopLevelClass(className, isPublic, braceOpen, braceClose));
-                    i = braceClose + 1;
-                    continue;
-                }
-            }
-            i++;
         }
         return result;
     }
@@ -370,12 +325,12 @@ class DeterministicWrapperGenerator {
                 continue;
             }
             if (depth == 0) {
-                if (matchesKeywordAt(masked, i, "class")
-                        || matchesKeywordAt(masked, i, "interface")
-                        || matchesKeywordAt(masked, i, "enum")) {
+                if (JavaSourceScanner.matchesKeywordAt(masked, i, "class")
+                        || JavaSourceScanner.matchesKeywordAt(masked, i, "interface")
+                        || JavaSourceScanner.matchesKeywordAt(masked, i, "enum")) {
                     int braceOpen = masked.indexOf('{', i);
                     if (braceOpen >= 0 && braceOpen < bodyEnd) {
-                        i = findMatchingBrace(masked, braceOpen) + 1;
+                        i = JavaSourceScanner.findMatchingBrace(masked, braceOpen) + 1;
                         continue;
                     }
                 }
@@ -384,6 +339,7 @@ class DeterministicWrapperGenerator {
                 if (m.lookingAt()) {
                     String modifiers = m.group(1) == null ? "" : m.group(1);
                     String methodName = m.group(3);
+                    String returnType = m.group(2).trim();
                     String rawParams = m.group(4);
                     int sigEnd = m.end();
                     int braceOpen = masked.indexOf('{', sigEnd);
@@ -392,12 +348,12 @@ class DeterministicWrapperGenerator {
                         i = semi >= 0 ? semi + 1 : sigEnd;
                         continue;
                     }
-                    int braceClose = findMatchingBrace(masked, braceOpen);
+                    int braceClose = JavaSourceScanner.findMatchingBrace(masked, braceOpen);
                     if (!methodName.equals(className) && Pattern.compile("\\bpublic\\b").matcher(modifiers).find()) {
                         boolean isStatic = Pattern.compile("\\bstatic\\b").matcher(modifiers).find();
                         List<String> paramTypes = splitParamTypes(rawParams);
-                        if (paramTypes != null) {
-                            methods.add(new MethodInfo(methodName, isStatic, m.group(2).trim(), paramTypes));
+                        if (paramTypes != null && !looksLikeMainMethod(isStatic, methodName, returnType, paramTypes)) {
+                            methods.add(new MethodInfo(methodName, isStatic, returnType, paramTypes));
                         }
                     }
                     i = braceClose + 1;
@@ -407,6 +363,24 @@ class DeterministicWrapperGenerator {
             i++;
         }
         return methods;
+    }
+
+    /**
+     * Defensive guard: a class's own {@code public static void main(String[])}
+     * should never be treated as a "regular method" to synthesize a call for -
+     * that produced the confirmed alpha/beta/gamma bug (a real main() got
+     * called with a synthesized {@code String[]} argument). {@link
+     * EntryPointDetector} is now responsible for recognizing a real entry
+     * point before this class ever runs, so this should never actually fire in
+     * practice - kept as a second line of defense in case that invariant is
+     * ever broken by a future change.
+     */
+    private boolean looksLikeMainMethod(boolean isStatic, String methodName, String returnType, List<String> paramTypes) {
+        return isStatic
+                && methodName.equals("main")
+                && returnType.replaceAll("\\s+", "").equals("void")
+                && paramTypes.size() == 1
+                && paramTypes.get(0).replaceAll("\\s+", "").equals("String[]");
     }
 
     private List<String> splitParamTypes(String rawParams) {
@@ -460,111 +434,5 @@ class DeterministicWrapperGenerator {
         }
         parts.add(s.substring(start));
         return parts;
-    }
-
-    private boolean matchesKeywordAt(String s, int i, String keyword) {
-        if (!s.startsWith(keyword, i)) {
-            return false;
-        }
-        if (i > 0 && Character.isJavaIdentifierPart(s.charAt(i - 1))) {
-            return false;
-        }
-        int end = i + keyword.length();
-        return end >= s.length() || !Character.isJavaIdentifierPart(s.charAt(end));
-    }
-
-    private int findModifiersStart(String masked, int keywordIndex) {
-        int i = keywordIndex;
-        while (i > 0) {
-            int back = i;
-            while (back > 0 && Character.isWhitespace(masked.charAt(back - 1))) back--;
-            int wordEnd = back;
-            while (back > 0 && Character.isJavaIdentifierPart(masked.charAt(back - 1))) back--;
-            if (back == wordEnd) {
-                break;
-            }
-            String word = masked.substring(back, wordEnd);
-            if (MODIFIER_WORDS.contains(word)) {
-                i = back;
-            } else {
-                break;
-            }
-        }
-        return i;
-    }
-
-    private int findMatchingBrace(String masked, int openIdx) {
-        int depth = 0;
-        for (int i = openIdx; i < masked.length(); i++) {
-            char c = masked.charAt(i);
-            if (c == '{') depth++;
-            else if (c == '}') {
-                depth--;
-                if (depth == 0) return i;
-            }
-        }
-        return masked.length() - 1;
-    }
-
-    private String maskNonCode(String src) {
-        StringBuilder masked = new StringBuilder(src.length());
-        int n = src.length();
-        int i = 0;
-        while (i < n) {
-            char c = src.charAt(i);
-            if (c == '/' && i + 1 < n && src.charAt(i + 1) == '/') {
-                while (i < n && src.charAt(i) != '\n') {
-                    masked.append(' ');
-                    i++;
-                }
-            } else if (c == '/' && i + 1 < n && src.charAt(i + 1) == '*') {
-                masked.append("  ");
-                i += 2;
-                while (i < n && !(src.charAt(i) == '*' && i + 1 < n && src.charAt(i + 1) == '/')) {
-                    masked.append(src.charAt(i) == '\n' ? '\n' : ' ');
-                    i++;
-                }
-                if (i < n) {
-                    masked.append("  ");
-                    i += 2;
-                }
-            } else if (c == '"') {
-                masked.append(' ');
-                i++;
-                while (i < n && src.charAt(i) != '"') {
-                    if (src.charAt(i) == '\\' && i + 1 < n) {
-                        masked.append("  ");
-                        i += 2;
-                        continue;
-                    }
-                    masked.append(' ');
-                    i++;
-                }
-                if (i < n) {
-                    masked.append(' ');
-                    i++;
-                }
-            } else if (c == '\'') {
-                masked.append(' ');
-                i++;
-                while (i < n && src.charAt(i) != '\'') {
-                    if (src.charAt(i) == '\\' && i + 1 < n) {
-                        masked.append("  ");
-                        i += 2;
-                        continue;
-                    }
-                    masked.append(' ');
-                    i++;
-                }
-                if (i < n) {
-                    masked.append(' ');
-                    i++;
-                }
-            } else {
-                masked.append(c == '\n' ? '\n' : c);
-                i++;
-            }
-        }
-        return masked.toString();
     }
 }

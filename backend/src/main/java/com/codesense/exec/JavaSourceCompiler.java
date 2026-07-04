@@ -14,7 +14,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -25,23 +24,16 @@ import java.util.stream.Collectors;
  *
  * <p>Named {@code JavaSourceCompiler} rather than {@code JavaCompiler} to avoid
  * colliding with {@link javax.tools.JavaCompiler}, which this class wraps.
+ *
+ * <p>{@code mainClassName} is supplied by the caller ({@link ExecutionService},
+ * via {@link EntryPointDetector} or the wrapper generators) rather than
+ * assumed to always be {@code "Main"} - the class actually being compiled
+ * might be the user's own already-runnable class under its real name.
  */
 @Service
 class JavaSourceCompiler {
 
-    private static final String MAIN_CLASS_NAME = "Main";
-    private static final Pattern MAIN_CLASS_PATTERN = Pattern.compile("\\bclass\\s+Main\\b");
-
-    boolean hasMainClass(String sourceCode) {
-        return MAIN_CLASS_PATTERN.matcher(sourceCode).find();
-    }
-
-    Path compile(String sourceCode) {
-        if (!MAIN_CLASS_PATTERN.matcher(sourceCode).find()) {
-            throw new CompilationFailedException(
-                    "Submitted code must define `public class Main` with a `public static void main(String[] args)` method");
-        }
-
+    Path compile(String sourceCode, String mainClassName) {
         Path workDir;
         try {
             workDir = Files.createTempDirectory("codesense-exec-");
@@ -49,7 +41,7 @@ class JavaSourceCompiler {
             throw new ExecutionFailedException("Failed to create temp compile directory", e);
         }
 
-        Path sourceFile = workDir.resolve(MAIN_CLASS_NAME + ".java");
+        Path sourceFile = workDir.resolve(mainClassName + ".java");
         try {
             Files.writeString(sourceFile, sourceCode);
         } catch (IOException e) {
