@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: codesense-ai-backend
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/codesense
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: 8080
+
+llm:
+  provider: ${LLM_PROVIDER:anthropic}
+
+anthropic:
+  api-key: ${ANTHROPIC_API_KEY:}
+  model: claude-sonnet-5
+
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  model: gemini-2.0-flash
+
+ollama:
+  model: ${OLLAMA_MODEL:llama3.2:1b}
+
+execution:
+  sandbox:
+    # local-process performs NO isolation - never use in an environment that
+    # accepts untrusted input without Docker also enforced. Default is
+    # local-process only because Docker isn't available in local dev here.
+    type: ${EXECUTION_SANDBOX_TYPE:local-process}   # docker | local-process
+    docker:
+      image: ${EXECUTION_SANDBOX_IMAGE:codesense/execution-sandbox:latest}
+      memory: ${EXECUTION_SANDBOX_MEMORY:256m}
+      cpus: ${EXECUTION_SANDBOX_CPUS:1.0}
+    readiness-timeout-seconds: ${EXECUTION_READINESS_TIMEOUT_SECONDS:10}
+  limits:
+    max-steps: ${EXECUTION_MAX_STEPS:2000}
+    max-stack-depth: ${EXECUTION_MAX_STACK_DEPTH:64}
+    max-object-depth: ${EXECUTION_MAX_OBJECT_DEPTH:4}
+    max-array-elements: ${EXECUTION_MAX_ARRAY_ELEMENTS:50}
+    max-object-fields: ${EXECUTION_MAX_OBJECT_FIELDS:50}
+    max-string-length: ${EXECUTION_MAX_STRING_LENGTH:1000}
+    timeout-seconds: ${EXECUTION_TIMEOUT_SECONDS:10}
+    max-console-output-bytes: ${EXECUTION_MAX_CONSOLE_OUTPUT_BYTES:65536}

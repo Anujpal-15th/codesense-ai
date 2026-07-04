@@ -1,0 +1,29 @@
+# Backend (Maven)
+backend/target/
+*.class
+
+# Frontend (Node/Vite)
+frontend/node_modules/
+frontend/dist/
+node_modules/
+dist/
+
+# Secrets / local environment overrides - never commit real credentials
+.env
+.env.*
+application-local.yml
+application-local.yaml
+application-secrets.yml
+application-secrets.yaml
+*-local.properties
+
+# Claude Code session/tool state (personal, machine-specific - not app source)
+.claude/
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
