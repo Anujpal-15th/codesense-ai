@@ -13,6 +13,7 @@ public class OllamaClientConfig {
     RestClient ollamaRestClient() {
         return RestClient.builder()
                 .baseUrl("http://localhost:11434")
+                .requestFactory(LlmRestClientTimeouts.localProviderFactory())
                 .build();
     }
 }

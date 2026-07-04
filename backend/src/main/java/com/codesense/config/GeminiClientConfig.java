@@ -15,6 +15,7 @@ public class GeminiClientConfig {
         return RestClient.builder()
                 .baseUrl("https://generativelanguage.googleapis.com/v1beta")
                 .defaultHeader("x-goog-api-key", apiKey)
+                .requestFactory(LlmRestClientTimeouts.hostedProviderFactory())
                 .build();
     }
 }

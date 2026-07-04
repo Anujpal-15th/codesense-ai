@@ -16,6 +16,7 @@ public class AnthropicClientConfig {
                 .baseUrl("https://api.anthropic.com/v1")
                 .defaultHeader("x-api-key", apiKey)
                 .defaultHeader("anthropic-version", "2023-06-01")
+                .requestFactory(LlmRestClientTimeouts.hostedProviderFactory())
                 .build();
     }
 }
