@@ -9,11 +9,25 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AnalysisService {
 
+    private static final String CUSTOM_DATA_STRUCTURE_HINT = """
+
+
+            [Static analysis note: this code defines a custom self-referential data \
+            structure (a class with a Node/next/left/head-style field referencing \
+            another class declared in this snippet) and does not use any java.util \
+            collection. If no genuine algorithmic pattern applies beyond building or \
+            traversing this structure, use "Custom data structure implementation" as \
+            the pattern - do not force-fit a named pattern onto it.]""";
+
     private final AnalysisRepository analysisRepository;
     private final LlmClient llmClient;
+    private final CustomDataStructureDetector customDataStructureDetector;
 
     public AnalysisResponse analyze(String codeSnippet) {
-        AnalysisResult result = llmClient.analyze(codeSnippet);
+        String llmInput = customDataStructureDetector.looksLikeCustomDataStructure(codeSnippet)
+                ? codeSnippet + CUSTOM_DATA_STRUCTURE_HINT
+                : codeSnippet;
+        AnalysisResult result = llmClient.analyze(llmInput);
 
         Analysis analysis = new Analysis();
         analysis.setCodeSnippet(codeSnippet);
