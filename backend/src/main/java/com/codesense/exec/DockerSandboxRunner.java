@@ -47,6 +47,9 @@ class DockerSandboxRunner implements SandboxRunner {
             Pattern.compile("Listening for transport dt_socket at address: (\\d+)");
     private static final int CONTAINER_DEBUG_PORT = 5005;
 
+    /** Cap on how much captured docker output to fold into an error message. */
+    private static final int MAX_ERROR_OUTPUT_CHARS = 2000;
+
     private final String image;
     private final String memory;
     private final String cpus;
@@ -84,12 +87,67 @@ class DockerSandboxRunner implements SandboxRunner {
 
         try {
             readyFuture.get(readinessTimeout.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (TimeoutException | ExecutionException | InterruptedException e) {
+        } catch (TimeoutException e) {
+            // The container is (probably) still alive but never printed the JDWP
+            // readiness line within the window - a genuine slow start / hang.
+            String detail = describeFailure(process, outputBuffer);
             DockerSandboxHandle.forceKill(process, containerName);
-            throw new ExecutionFailedException("Docker sandbox container did not become ready in time", e);
+            log.warn("Docker sandbox did not become ready within {}s.{}", readinessTimeout.toSeconds(), detail);
+            throw new ExecutionFailedException(
+                    "Docker sandbox container did not become ready within " + readinessTimeout.toSeconds() + "s."
+                            + detail, e);
+        } catch (ExecutionException e) {
+            // pumpOutput completed the future exceptionally: the container's
+            // output stream closed before the readiness line appeared, i.e. the
+            // container exited early (image missing, bad flags, immediate crash).
+            // Its real docker error text is sitting in outputBuffer - surface it.
+            String detail = describeFailure(process, outputBuffer);
+            DockerSandboxHandle.forceKill(process, containerName);
+            log.warn("Docker sandbox container exited before signaling readiness.{}", detail);
+            throw new ExecutionFailedException(
+                    "Docker sandbox container exited before signaling readiness." + detail, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            DockerSandboxHandle.forceKill(process, containerName);
+            throw new ExecutionFailedException("Interrupted while waiting for Docker sandbox to become ready", e);
         }
 
         return new DockerSandboxHandle(process, containerName, "localhost", hostPort, outputBuffer);
+    }
+
+    /**
+     * Builds a diagnostic suffix for a startup failure: the {@code docker run}
+     * process's exit code (when it has already terminated) plus the captured
+     * docker stdout/stderr (bounded). Without this the real cause - e.g.
+     * "pull access denied ... repository does not exist", or a bad flag, or a
+     * missing sandbox network - sits unread in {@code outputBuffer} and the
+     * caller only sees a generic "did not become ready" 502.
+     */
+    private String describeFailure(Process process, ConcurrentLinkedQueue<String> outputBuffer) {
+        StringBuilder sb = new StringBuilder();
+        if (!process.isAlive()) {
+            sb.append(" docker exit code: ").append(process.exitValue()).append('.');
+        }
+        String captured = drainBounded(outputBuffer);
+        if (captured.isBlank()) {
+            sb.append(" (no output captured from docker.)");
+        } else {
+            sb.append(" docker output: ").append(captured.strip());
+        }
+        return sb.toString();
+    }
+
+    private String drainBounded(ConcurrentLinkedQueue<String> outputBuffer) {
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = outputBuffer.poll()) != null) {
+            sb.append(line);
+            if (sb.length() >= MAX_ERROR_OUTPUT_CHARS) {
+                sb.append("…(truncated)");
+                break;
+            }
+        }
+        return sb.toString();
     }
 
     private List<String> buildDockerRunCommand(Path classOutputDir, String mainClassName, int hostPort, String containerName) {
