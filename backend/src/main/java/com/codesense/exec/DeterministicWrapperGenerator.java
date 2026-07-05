@@ -59,8 +59,32 @@ class DeterministicWrapperGenerator {
             "char", "new char[][]{{'a', 'b'}, {'c', 'd'}}",
             "String", "new String[][]{{\"a\", \"b\"}, {\"c\", \"d\"}}");
 
-    private static final Set<String> BOXED_LIST_ELEMENT_TYPES =
-            Set.of("Integer", "Long", "Double", "String", "Boolean", "Character");
+    /**
+     * Shared per-type sample element sequences - the single source List, Set,
+     * Map, and custom-class-constructor synthesis all draw from, so sample
+     * data stays consistent across every collection shape. Keys are distinct
+     * within each list (required for Set/Map key synthesis).
+     */
+    private static final Map<String, List<String>> ELEMENT_SAMPLES = Map.of(
+            "Integer", List.of("4", "2", "7", "1", "9"),
+            "Long", List.of("4L", "2L", "7L", "1L", "9L"),
+            "Double", List.of("4.0", "2.0", "7.0", "1.0", "9.0"),
+            "Float", List.of("4.0f", "2.0f", "7.0f"),
+            "Boolean", List.of("true", "false"),
+            "Character", List.of("'a'", "'b'", "'c'"),
+            "String", List.of("\"alpha\"", "\"beta\"", "\"gamma\""));
+
+    /** Widening-safe mapping from primitive parameter types to the boxed sample table. */
+    private static final Map<String, String> PRIMITIVE_TO_SAMPLE_KEY = Map.of(
+            "int", "Integer", "byte", "Integer", "short", "Integer",
+            "long", "Long", "double", "Double", "float", "Float",
+            "boolean", "Boolean", "char", "Character");
+
+    private static final Pattern LIST_TYPE = Pattern.compile("^(?:java\\.util\\.)?(?:Array|Linked)?List<(\\w+)>$");
+    // LinkedHashSet/LinkedHashMap are assignable to Set/HashSet and Map/HashMap
+    // respectively, but NOT to TreeSet/TreeMap/Sorted* - those fall back to the LLM.
+    private static final Pattern SET_TYPE = Pattern.compile("^(?:java\\.util\\.)?(?:Hash|LinkedHash)?Set<(\\w+)>$");
+    private static final Pattern MAP_TYPE = Pattern.compile("^(?:java\\.util\\.)?(?:Hash|LinkedHash)?Map<(\\w+),(\\w+)>$");
 
     private static final String LIST_NODE_CLASS = """
             class ListNode {
@@ -170,12 +194,14 @@ class DeterministicWrapperGenerator {
             return Optional.empty();
         }
 
+        Map<String, String> customClassSamples = buildCustomClassSamples(masked, classes);
+
         List<String> args = new ArrayList<>();
         boolean needsListNode = false;
         boolean needsTreeNode = false;
         for (String rawParamType : entryMethod.paramTypes()) {
             String paramType = rawParamType.replaceAll("\\s+", "");
-            Optional<String> arg = sampleArgFor(paramType);
+            Optional<String> arg = sampleArgFor(paramType, customClassSamples);
             if (arg.isEmpty()) {
                 return Optional.empty();
             }
@@ -231,7 +257,7 @@ class DeterministicWrapperGenerator {
         return Optional.of(src.toString());
     }
 
-    private Optional<String> sampleArgFor(String type) {
+    private Optional<String> sampleArgFor(String type, Map<String, String> customClassSamples) {
         if (SCALAR_LITERALS.containsKey(type)) {
             return Optional.of(SCALAR_LITERALS.get(type));
         }
@@ -256,18 +282,146 @@ class DeterministicWrapperGenerator {
         if (dims == 2 && ARRAY_2D_LITERALS.containsKey(base)) {
             return Optional.of(ARRAY_2D_LITERALS.get(base));
         }
-        Matcher listMatcher = Pattern.compile("^(?:java\\.util\\.)?List<(\\w+)>$").matcher(type);
-        if (listMatcher.matches()) {
-            String elementType = listMatcher.group(1);
-            if (BOXED_LIST_ELEMENT_TYPES.contains(elementType)) {
-                String elements = ARRAY_1D_LITERALS.containsKey(elementType)
-                        ? ARRAY_1D_LITERALS.get(elementType).replaceFirst("^new \\w+\\[\\]", "")
-                        : "{\"example\"}";
-                return Optional.of("new java.util.ArrayList<>(java.util.Arrays.asList"
-                        + elements.replace("{", "(").replace("}", ")") + ")");
-            }
+
+        Matcher listMatcher = LIST_TYPE.matcher(type);
+        if (listMatcher.matches() && ELEMENT_SAMPLES.containsKey(listMatcher.group(1))) {
+            return Optional.of("new java.util.ArrayList<>(java.util.Arrays.asList("
+                    + String.join(", ", ELEMENT_SAMPLES.get(listMatcher.group(1))) + "))");
+        }
+        Matcher setMatcher = SET_TYPE.matcher(type);
+        if (setMatcher.matches() && ELEMENT_SAMPLES.containsKey(setMatcher.group(1))) {
+            return Optional.of("new java.util.LinkedHashSet<>(java.util.Arrays.asList("
+                    + String.join(", ", ELEMENT_SAMPLES.get(setMatcher.group(1))) + "))");
+        }
+        Matcher mapMatcher = MAP_TYPE.matcher(type);
+        if (mapMatcher.matches()
+                && ELEMENT_SAMPLES.containsKey(mapMatcher.group(1))
+                && ELEMENT_SAMPLES.containsKey(mapMatcher.group(2))) {
+            return Optional.of(mapLiteral(mapMatcher.group(1), mapMatcher.group(2)));
+        }
+
+        // Simple custom class declared in the snippet (single non-private
+        // constructor, all-scalar/String params) - precomputed instantiation.
+        if (customClassSamples.containsKey(type)) {
+            return Optional.of(customClassSamples.get(type));
         }
         return Optional.empty();
+    }
+
+    /**
+     * Single-expression, mutable, deterministic-iteration-order map literal:
+     * a LinkedHashMap built via an instance-initializer subclass. Chosen over
+     * {@code Map.of(...)} (immutable - user code calling put() on the param
+     * would throw) and over a plain LinkedHashMap copy of Map.of (Map.of has
+     * unspecified iteration order, which would make traces vary run to run).
+     */
+    private String mapLiteral(String keyType, String valueType) {
+        List<String> keys = ELEMENT_SAMPLES.get(keyType);
+        List<String> values = ELEMENT_SAMPLES.get(valueType);
+        int entries = Math.min(3, Math.min(keys.size(), values.size()));
+        StringBuilder sb = new StringBuilder("new java.util.LinkedHashMap<")
+                .append(keyType).append(", ").append(valueType).append(">() {{ ");
+        for (int i = 0; i < entries; i++) {
+            sb.append("put(").append(keys.get(i)).append(", ").append(values.get(i)).append("); ");
+        }
+        return sb.append("}}").toString();
+    }
+
+    /**
+     * For each top-level class in the snippet with exactly one non-private
+     * constructor whose parameters are all primitives/boxed/String, builds a
+     * ready-to-inline instantiation like {@code new Interval(4, 2)} - sample
+     * values vary by parameter position so e.g. a 2-int constructor doesn't
+     * get two identical arguments. Classes with zero constructors (fields
+     * would stay default-initialized), multiple constructors (ambiguous), or
+     * non-scalar constructor params are deliberately excluded - those fall
+     * back to the LLM path unchanged. Stateful "design" classes needing
+     * sequential method calls (MinStack, LRUCache) are explicitly out of
+     * scope here - flagged as a separate future task.
+     */
+    private Map<String, String> buildCustomClassSamples(String masked, List<JavaSourceScanner.TopLevelClass> classes) {
+        Map<String, String> samples = new java.util.HashMap<>();
+        for (JavaSourceScanner.TopLevelClass tc : classes) {
+            if (tc.name().equals("Main")) {
+                continue;
+            }
+            List<String> ctorParamTypes = singleConstructorParamTypes(masked, tc);
+            if (ctorParamTypes == null || ctorParamTypes.isEmpty()) {
+                continue;
+            }
+            List<String> ctorArgs = new ArrayList<>();
+            boolean allSupported = true;
+            for (int position = 0; position < ctorParamTypes.size(); position++) {
+                String arg = positionalScalarSample(ctorParamTypes.get(position), position);
+                if (arg == null) {
+                    allSupported = false;
+                    break;
+                }
+                ctorArgs.add(arg);
+            }
+            if (allSupported) {
+                samples.put(tc.name(), "new " + tc.name() + "(" + String.join(", ", ctorArgs) + ")");
+            }
+        }
+        return samples;
+    }
+
+    /**
+     * @return the single non-private constructor's parameter types, or null
+     * if the class has zero constructors, more than one, or a private one.
+     */
+    private List<String> singleConstructorParamTypes(String masked, JavaSourceScanner.TopLevelClass tc) {
+        Pattern ctorPattern = Pattern.compile(
+                "((?:(?:public|private|protected)\\s+)?)" + Pattern.quote(tc.name())
+                        + "\\s*\\(([^)]*)\\)\\s*(?:throws\\s+[\\w.,\\s]+)?\\s*\\{");
+        List<String> found = null;
+        int count = 0;
+        int depth = 0;
+        int i = tc.braceOpen() + 1;
+        int bodyEnd = tc.braceClose();
+        while (i < bodyEnd) {
+            char c = masked.charAt(i);
+            if (c == '{') {
+                depth++;
+                i++;
+                continue;
+            }
+            if (c == '}') {
+                depth--;
+                i++;
+                continue;
+            }
+            if (depth == 0) {
+                Matcher m = ctorPattern.matcher(masked);
+                m.region(i, bodyEnd);
+                if (m.lookingAt()) {
+                    count++;
+                    if (m.group(1).contains("private")) {
+                        return null;
+                    }
+                    List<String> paramTypes = splitParamTypes(m.group(2).trim());
+                    if (paramTypes == null) {
+                        return null;
+                    }
+                    found = paramTypes;
+                    int braceOpen = masked.indexOf('{', m.end() - 1);
+                    i = JavaSourceScanner.findMatchingBrace(masked, braceOpen) + 1;
+                    continue;
+                }
+            }
+            i++;
+        }
+        return count == 1 ? found : null;
+    }
+
+    private String positionalScalarSample(String rawType, int position) {
+        String type = rawType.replaceAll("\\s+", "");
+        String sampleKey = PRIMITIVE_TO_SAMPLE_KEY.getOrDefault(type, type);
+        List<String> samples = ELEMENT_SAMPLES.get(sampleKey);
+        if (samples == null) {
+            return null;
+        }
+        return samples.get(position % samples.size());
     }
 
     private String printStatement(String returnTypeNormalized, String varName) {
