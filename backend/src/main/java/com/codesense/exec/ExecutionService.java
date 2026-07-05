@@ -48,6 +48,8 @@ public class ExecutionService {
         String mainClassName;
         String executedSourceCode;
         boolean needsWrapping;
+        Path classDir = null;
+        long compileNanos = 0;
 
         if (existingEntryPoint.isPresent()) {
             mainClassName = existingEntryPoint.get();
@@ -55,14 +57,35 @@ public class ExecutionService {
             needsWrapping = false;
         } else {
             mainClassName = GENERATED_MAIN_CLASS_NAME;
-            executedSourceCode = deterministicWrapperGenerator.tryWrap(sourceCode)
-                    .orElseGet(() -> wrapperGenerator.wrap(sourceCode));
             needsWrapping = true;
+            // The deterministic wrapper synthesizes arguments without proving
+            // the result compiles (e.g. a bare snippet using Map/List/Set with
+            // no import) - so compile it eagerly and treat a compile failure
+            // as "deterministic wrap doesn't apply", falling back to the LLM
+            // wrapper instead of surfacing the error to the user. A compile
+            // failure on the LLM path (or the unwrapped path below) still
+            // surfaces normally - by then it's the user's own code at fault.
+            Optional<String> deterministic = deterministicWrapperGenerator.tryWrap(sourceCode);
+            if (deterministic.isPresent()) {
+                try {
+                    long c0 = System.nanoTime();
+                    classDir = compiler.compile(deterministic.get(), mainClassName);
+                    compileNanos = System.nanoTime() - c0;
+                } catch (CompilationFailedException e) {
+                    log.info("Deterministic wrapper output failed to compile, falling back to LLM wrapper: {}",
+                            firstLine(e.getMessage()));
+                }
+            }
+            executedSourceCode = classDir != null ? deterministic.get() : wrapperGenerator.wrap(sourceCode);
         }
-        long tWrapped = System.nanoTime();
 
-        Path classDir = compiler.compile(executedSourceCode, mainClassName);
+        if (classDir == null) {
+            long c0 = System.nanoTime();
+            classDir = compiler.compile(executedSourceCode, mainClassName);
+            compileNanos = System.nanoTime() - c0;
+        }
         long tCompiled = System.nanoTime();
+        long tWrapped = tCompiled - compileNanos;
 
         ExecutionTrace trace;
         long tSandboxUp;
@@ -83,5 +106,13 @@ public class ExecutionService {
                 needsWrapping);
 
         return new ExecutionResponse(trace, executedSourceCode, needsWrapping, Instant.now());
+    }
+
+    private static String firstLine(String message) {
+        if (message == null) {
+            return "";
+        }
+        int newline = message.indexOf('\n');
+        return newline >= 0 ? message.substring(0, newline) : message;
     }
 }
