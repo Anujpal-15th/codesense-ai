@@ -10,7 +10,14 @@
 
 import { valueKey } from './traceValue'
 
-export const EMPTY_CHANGES = { changed: new Set(), added: new Set(), changedHashes: new Set(), tick: 0 }
+export const EMPTY_CHANGES = {
+  changed: new Set(),
+  added: new Set(),
+  changedHashes: new Set(),
+  newFrameDepths: new Set(),
+  newObjectHashes: new Set(),
+  tick: 0,
+}
 
 export function fieldPath(base, fieldName) {
   return `${base}.${fieldName}`
@@ -29,13 +36,31 @@ export function setElemPath(base, elemValue) {
  * Computes changes for the transition INTO `trace.steps[index]` (i.e. index-1 ->
  * index). Pure function of (trace, index): navigation-direction independent, so
  * scrubbing shows the same result as stepping. Returns { changed, added,
- * changedHashes, tick }.
+ * changedHashes, newFrameDepths, newObjectHashes, tick }.
+ *
+ * At index 0 (the very first step), there is no previous step to diff against -
+ * everything visible (the initial frame, any already-allocated objects) is
+ * treated as newly-appeared, so the entrance stagger also plays on first mount
+ * rather than only on later transitions.
  */
 export function computeStepChanges(trace, index) {
-  if (!trace || index <= 0) return { ...EMPTY_CHANGES, tick: index }
-  const prev = trace.steps[index - 1]
+  if (!trace) return { ...EMPTY_CHANGES, tick: index }
   const curr = trace.steps[index]
-  if (!prev || !curr) return { ...EMPTY_CHANGES, tick: index }
+  if (!curr) return { ...EMPTY_CHANGES, tick: index }
+
+  if (index === 0) {
+    return {
+      changed: new Set(),
+      added: new Set(),
+      changedHashes: new Set(),
+      newFrameDepths: allFrameDepths(curr),
+      newObjectHashes: new Set(signaturesByHash(curr).keys()),
+      tick: index,
+    }
+  }
+
+  const prev = trace.steps[index - 1]
+  if (!prev) return { ...EMPTY_CHANGES, tick: index }
 
   const changed = new Set()
   const added = new Set()
@@ -57,7 +82,51 @@ export function computeStepChanges(trace, index) {
   }
 
   const changedHashes = computeChangedHashes(prev, curr)
-  return { changed, added, changedHashes, tick: index }
+  const newFrameDepths = computeNewFrameDepths(prev, curr)
+  const newObjectHashes = computeNewObjectHashes(prev, curr)
+  return { changed, added, changedHashes, newFrameDepths, newObjectHashes, tick: index }
+}
+
+function allFrameDepths(step) {
+  const n = step.callStack.length
+  return new Set(Array.from({ length: n }, (_, i) => n - 1 - i))
+}
+
+/**
+ * Depths-from-the-bottom (main() = depth 0) of frames in `curr` that are
+ * genuinely new this step (just pushed by a METHOD_ENTRY). Depth-from-bottom,
+ * not raw array index, is what's stable across a push: pushing a frame on top
+ * shifts every existing frame's array INDEX by +1, but its depth-from-bottom
+ * (distance from main()) doesn't change - so comparing by depth correctly
+ * flags only the newly-entered frame, including across a multi-step scrub
+ * where more than one frame may have appeared since the last-rendered step.
+ */
+function computeNewFrameDepths(prev, curr) {
+  const prevByDepth = new Map()
+  const prevLen = prev.callStack.length
+  prev.callStack.forEach((frame, i) => {
+    prevByDepth.set(prevLen - 1 - i, `${frame.className}.${frame.methodName}`)
+  })
+
+  const newDepths = new Set()
+  const currLen = curr.callStack.length
+  curr.callStack.forEach((frame, i) => {
+    const depth = currLen - 1 - i
+    const key = `${frame.className}.${frame.methodName}`
+    if (prevByDepth.get(depth) !== key) newDepths.add(depth)
+  })
+  return newDepths
+}
+
+/** identityHashes present in curr's heap walk but absent from prev's - i.e. objects allocated since the last-rendered step. */
+function computeNewObjectHashes(prev, curr) {
+  const prevHashes = new Set(signaturesByHash(prev).keys())
+  const currHashes = signaturesByHash(curr)
+  const fresh = new Set()
+  for (const hash of currHashes.keys()) {
+    if (!prevHashes.has(hash)) fresh.add(hash)
+  }
+  return fresh
 }
 
 function diffFrameVars(prevFrame, currFrame, changed, added) {

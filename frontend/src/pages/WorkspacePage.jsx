@@ -153,7 +153,6 @@ function WorkspacePage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <CallStackPanel />
             <div className="rounded-lg border border-line bg-paper-raised p-4">
-              <h2 className="mb-3 font-mono text-xs font-semibold tracking-widest text-ink-soft uppercase">Memory</h2>
               <MemoryView />
             </div>
           </div>
