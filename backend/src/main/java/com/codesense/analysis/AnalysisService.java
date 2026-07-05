@@ -1,10 +1,12 @@
 package com.codesense.analysis;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AnalysisService {
@@ -22,6 +24,7 @@ public class AnalysisService {
     private final AnalysisRepository analysisRepository;
     private final LlmClient llmClient;
     private final CustomDataStructureDetector customDataStructureDetector;
+    private final PatternEvidenceGuard patternEvidenceGuard;
 
     public AnalysisResponse analyze(String codeSnippet) {
         String llmInput = customDataStructureDetector.looksLikeCustomDataStructure(codeSnippet)
@@ -29,13 +32,28 @@ public class AnalysisService {
                 : codeSnippet;
         AnalysisResult result = llmClient.analyze(llmInput);
 
+        long guardStart = System.nanoTime();
+        boolean patternSupported = patternEvidenceGuard.isSupported(codeSnippet, result.pattern());
+        long guardMicros = (System.nanoTime() - guardStart) / 1_000;
+        log.info("Pattern evidence guard: label='{}' supported={} cost={}us",
+                result.pattern(), patternSupported, guardMicros);
+
+        String pattern = patternSupported
+                ? result.pattern()
+                : PatternEvidenceGuard.UNCLEAR_PATTERN_LABEL;
+        String explanation = patternSupported
+                ? result.explanation()
+                : "[Automated check: the model labeled this \"" + result.pattern()
+                        + "\" but the code lacks that pattern's basic structure, so the label was withheld.] "
+                        + result.explanation();
+
         Analysis analysis = new Analysis();
         analysis.setCodeSnippet(codeSnippet);
-        analysis.setPattern(result.pattern());
+        analysis.setPattern(pattern);
         analysis.setTimeComplexity(result.timeComplexity());
         analysis.setSpaceComplexity(result.spaceComplexity());
         analysis.setOptimal(result.isOptimal());
-        analysis.setExplanation(result.explanation());
+        analysis.setExplanation(explanation);
         analysis.setReadability(result.readability());
         analysis.setStructure(result.structure());
         analysis.setStyleSuggestions(result.styleSuggestions());
