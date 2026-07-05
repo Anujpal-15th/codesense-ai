@@ -1,5 +1,6 @@
 package com.codesense.exec;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -8,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 
+@Slf4j
 @Service
 public class ExecutionService {
 
@@ -40,6 +42,7 @@ public class ExecutionService {
     }
 
     public ExecutionResponse execute(String sourceCode) {
+        long tStart = System.nanoTime();
         Optional<String> existingEntryPoint = entryPointDetector.findEntryPointClass(sourceCode);
 
         String mainClassName;
@@ -56,13 +59,28 @@ public class ExecutionService {
                     .orElseGet(() -> wrapperGenerator.wrap(sourceCode));
             needsWrapping = true;
         }
+        long tWrapped = System.nanoTime();
 
         Path classDir = compiler.compile(executedSourceCode, mainClassName);
+        long tCompiled = System.nanoTime();
 
         ExecutionTrace trace;
-        try (SandboxHandle handle = sandboxRunner.start(classDir, mainClassName, readinessTimeout)) {
+        long tSandboxUp;
+        SandboxHandle handle = sandboxRunner.start(classDir, mainClassName, readinessTimeout);
+        tSandboxUp = System.nanoTime();
+        try (handle) {
             trace = tracer.trace(handle, mainClassName);
         }
+        long tTraced = System.nanoTime();
+
+        log.info("Execution timing: detect+wrap={}ms compile={}ms sandboxStart={}ms trace={}ms total={}ms (steps={}, wrapped={})",
+                (tWrapped - tStart) / 1_000_000,
+                (tCompiled - tWrapped) / 1_000_000,
+                (tSandboxUp - tCompiled) / 1_000_000,
+                (tTraced - tSandboxUp) / 1_000_000,
+                (tTraced - tStart) / 1_000_000,
+                trace.totalStepsCaptured(),
+                needsWrapping);
 
         return new ExecutionResponse(trace, executedSourceCode, needsWrapping, Instant.now());
     }

@@ -35,6 +35,7 @@ import com.sun.jdi.request.ExceptionRequest;
 import com.sun.jdi.request.MethodEntryRequest;
 import com.sun.jdi.request.MethodExitRequest;
 import com.sun.jdi.request.StepRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -48,6 +49,7 @@ import java.util.Map;
  * singleton bean - all per-execution mutable state lives in a local
  * {@link TraceSession} instance for the duration of a single {@link #trace} call.
  */
+@Slf4j
 @Service
 class JavaTracer {
 
@@ -65,6 +67,7 @@ class JavaTracer {
     ExecutionTrace trace(SandboxHandle handle, String mainClassName) {
         long startTime = System.currentTimeMillis();
         VirtualMachine vm = attach(handle);
+        log.info("Trace timing: JDI attach={}ms", System.currentTimeMillis() - startTime);
         TraceSession session = new TraceSession();
 
         try {

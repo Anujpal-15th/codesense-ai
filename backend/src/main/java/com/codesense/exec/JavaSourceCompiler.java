@@ -1,5 +1,6 @@
 package com.codesense.exec;
 
+import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
 
 import javax.tools.Diagnostic;
@@ -29,11 +30,36 @@ import java.util.stream.Collectors;
  * via {@link EntryPointDetector} or the wrapper generators) rather than
  * assumed to always be {@code "Main"} - the class actually being compiled
  * might be the user's own already-runnable class under its real name.
+ *
+ * <p><b>The {@link StandardJavaFileManager} is created once and reused across
+ * compilations</b> - profiling showed the compile stage dominating every
+ * execution request (~360-405ms of a ~550ms total for typical snippets), and
+ * most of that cost is a fresh file manager re-reading the JDK platform-class
+ * image on every call; a reused manager caches it. The file manager is NOT
+ * thread-safe, so {@link #compile} is synchronized - execution requests
+ * serialize through compilation, which is acceptable for this single-user
+ * dev tool (each compile is fast; see profiling numbers in
+ * implementation-notes.md).
  */
 @Service
 class JavaSourceCompiler {
 
-    Path compile(String sourceCode, String mainClassName) {
+    private final JavaCompiler compiler;
+    private final StandardJavaFileManager sharedFileManager;
+
+    JavaSourceCompiler() {
+        this.compiler = ToolProvider.getSystemJavaCompiler();
+        this.sharedFileManager = compiler == null
+                ? null
+                : compiler.getStandardFileManager(null, Locale.getDefault(), StandardCharsets.UTF_8);
+    }
+
+    synchronized Path compile(String sourceCode, String mainClassName) {
+        if (compiler == null) {
+            throw new ExecutionFailedException(
+                    "No system Java compiler available (is a JDK, not just a JRE, on the classpath?)");
+        }
+
         Path workDir;
         try {
             workDir = Files.createTempDirectory("codesense-exec-");
@@ -48,31 +74,34 @@ class JavaSourceCompiler {
             throw new ExecutionFailedException("Failed to write submitted source to disk", e);
         }
 
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        if (compiler == null) {
-            throw new ExecutionFailedException(
-                    "No system Java compiler available (is a JDK, not just a JRE, on the classpath?)");
-        }
-
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        try (StandardJavaFileManager fileManager =
-                     compiler.getStandardFileManager(diagnostics, Locale.getDefault(), StandardCharsets.UTF_8)) {
-            Iterable<? extends JavaFileObject> compilationUnits =
-                    fileManager.getJavaFileObjectsFromPaths(List.of(sourceFile));
+        Iterable<? extends JavaFileObject> compilationUnits =
+                sharedFileManager.getJavaFileObjectsFromPaths(List.of(sourceFile));
 
-            List<String> options = List.of("-g", "-proc:none", "-d", workDir.toString());
+        // -d is per-task: getTask() routes it through the (shared) file
+        // manager's handleOption, which is safe here because compile() is
+        // synchronized - no two tasks can interleave output locations.
+        List<String> options = List.of("-g", "-proc:none", "-d", workDir.toString());
 
-            JavaCompiler.CompilationTask task = compiler.getTask(
-                    null, fileManager, diagnostics, options, null, compilationUnits);
+        JavaCompiler.CompilationTask task = compiler.getTask(
+                null, sharedFileManager, diagnostics, options, null, compilationUnits);
 
-            if (!task.call()) {
-                throw new CompilationFailedException(formatDiagnostics(diagnostics));
-            }
-        } catch (IOException e) {
-            throw new ExecutionFailedException("Failed to close compiler file manager", e);
+        if (!task.call()) {
+            throw new CompilationFailedException(formatDiagnostics(diagnostics));
         }
 
         return workDir;
+    }
+
+    @PreDestroy
+    void closeFileManager() {
+        if (sharedFileManager != null) {
+            try {
+                sharedFileManager.close();
+            } catch (IOException ignored) {
+                // shutting down anyway
+            }
+        }
     }
 
     private String formatDiagnostics(DiagnosticCollector<JavaFileObject> diagnostics) {
