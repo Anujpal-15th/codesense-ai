@@ -1,6 +1,7 @@
 package com.codesense.exec;
 
 import jakarta.annotation.PreDestroy;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import javax.tools.Diagnostic;
@@ -10,12 +11,15 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Compiles a single submitted Java source file in-memory/on-disk (a temp dir),
@@ -41,6 +45,7 @@ import java.util.stream.Collectors;
  * dev tool (each compile is fast; see profiling numbers in
  * implementation-notes.md).
  */
+@Slf4j
 @Service
 class JavaSourceCompiler {
 
@@ -67,30 +72,88 @@ class JavaSourceCompiler {
             throw new ExecutionFailedException("Failed to create temp compile directory", e);
         }
 
-        Path sourceFile = workDir.resolve(mainClassName + ".java");
+        // Any failure from here on leaves a half-populated work dir behind -
+        // clean it up before rethrowing so failed compiles (including the
+        // deterministic-wrapper fallback probe in ExecutionService) don't
+        // leak a directory per request. Successful compiles hand ownership
+        // of the dir to the caller, who cleans it up after the trace.
         try {
-            Files.writeString(sourceFile, sourceCode);
-        } catch (IOException e) {
-            throw new ExecutionFailedException("Failed to write submitted source to disk", e);
+            Path sourceFile = workDir.resolve(mainClassName + ".java");
+            try {
+                Files.writeString(sourceFile, sourceCode);
+            } catch (IOException e) {
+                throw new ExecutionFailedException("Failed to write submitted source to disk", e);
+            }
+
+            DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+            Iterable<? extends JavaFileObject> compilationUnits =
+                    sharedFileManager.getJavaFileObjectsFromPaths(List.of(sourceFile));
+
+            // -d is per-task: getTask() routes it through the (shared) file
+            // manager's handleOption, which is safe here because compile() is
+            // synchronized - no two tasks can interleave output locations.
+            List<String> options = List.of("-g", "-proc:none", "-d", workDir.toString());
+
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null, sharedFileManager, diagnostics, options, null, compilationUnits);
+
+            if (!task.call()) {
+                throw new CompilationFailedException(formatDiagnostics(diagnostics));
+            }
+
+            return workDir;
+        } catch (RuntimeException e) {
+            cleanupWorkDir(workDir);
+            throw e;
         }
+    }
 
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        Iterable<? extends JavaFileObject> compilationUnits =
-                sharedFileManager.getJavaFileObjectsFromPaths(List.of(sourceFile));
-
-        // -d is per-task: getTask() routes it through the (shared) file
-        // manager's handleOption, which is safe here because compile() is
-        // synchronized - no two tasks can interleave output locations.
-        List<String> options = List.of("-g", "-proc:none", "-d", workDir.toString());
-
-        JavaCompiler.CompilationTask task = compiler.getTask(
-                null, sharedFileManager, diagnostics, options, null, compilationUnits);
-
-        if (!task.call()) {
-            throw new CompilationFailedException(formatDiagnostics(diagnostics));
+    /**
+     * Best-effort recursive delete of a compile work dir. Retries briefly:
+     * the debuggee JVM is killed via a fire-and-forget destroyForcibly(), so
+     * on Windows it can still hold locks on the class files for a moment
+     * after {@code SandboxHandle.close()} returns. A dir that still can't be
+     * deleted after the retries is logged and abandoned - never worth
+     * failing the request over.
+     */
+    void cleanupWorkDir(Path workDir) {
+        if (workDir == null) {
+            return;
         }
+        for (int attempt = 0; attempt < 3; attempt++) {
+            if (attempt > 0) {
+                try {
+                    Thread.sleep(150L * attempt);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+            try {
+                if (deleteTree(workDir)) {
+                    return;
+                }
+            } catch (IOException | UncheckedIOException e) {
+                // locked file mid-walk; retry
+            }
+        }
+        log.warn("Could not delete compile work dir after retries (leaked): {}", workDir);
+    }
 
-        return workDir;
+    private boolean deleteTree(Path dir) throws IOException {
+        if (!Files.exists(dir)) {
+            return true;
+        }
+        try (Stream<Path> walk = Files.walk(dir)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.delete(p);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+        }
+        return !Files.exists(dir);
     }
 
     @PreDestroy

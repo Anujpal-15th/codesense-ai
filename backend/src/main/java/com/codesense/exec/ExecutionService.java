@@ -89,10 +89,18 @@ public class ExecutionService {
 
         ExecutionTrace trace;
         long tSandboxUp;
-        SandboxHandle handle = sandboxRunner.start(classDir, mainClassName, readinessTimeout);
-        tSandboxUp = System.nanoTime();
-        try (handle) {
-            trace = tracer.trace(handle, mainClassName);
+        try {
+            SandboxHandle handle = sandboxRunner.start(classDir, mainClassName, readinessTimeout);
+            tSandboxUp = System.nanoTime();
+            try (handle) {
+                trace = tracer.trace(handle, mainClassName);
+            }
+        } finally {
+            // All outcomes - NORMAL, EXCEPTION, TIMED_OUT, and infra failures
+            // (sandbox launch / JDI attach) - are done with the compiled
+            // classes once we get here; without this, every request leaked a
+            // codesense-exec-* temp directory.
+            compiler.cleanupWorkDir(classDir);
         }
         long tTraced = System.nanoTime();
 
