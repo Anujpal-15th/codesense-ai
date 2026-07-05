@@ -21,10 +21,14 @@ public class AnalysisService {
             traversing this structure, use "Custom data structure implementation" as \
             the pattern - do not force-fit a named pattern onto it.]""";
 
+    private static final String NO_VERIFIED_IMPROVEMENT =
+            "The current complexity appears appropriate for this problem; no verified improvement was identified.";
+
     private final AnalysisRepository analysisRepository;
     private final LlmClient llmClient;
     private final CustomDataStructureDetector customDataStructureDetector;
     private final PatternEvidenceGuard patternEvidenceGuard;
+    private final ComplexityClaimGuard complexityClaimGuard;
 
     public AnalysisResponse analyze(String codeSnippet) {
         String llmInput = customDataStructureDetector.looksLikeCustomDataStructure(codeSnippet)
@@ -47,6 +51,26 @@ public class AnalysisService {
                         + "\" but the code lacks that pattern's basic structure, so the label was withheld.] "
                         + result.explanation();
 
+        long claimStart = System.nanoTime();
+        ComplexityClaimGuard.ComplexityClaimVerdict claimVerdict = complexityClaimGuard.check(
+                codeSnippet, result.timeComplexity(), result.suggestedTimeComplexity(),
+                result.isOptimal(), result.efficiencySuggestions());
+        long claimMicros = (System.nanoTime() - claimStart) / 1_000;
+        log.info("Complexity claim guard: incoherent={} reason={} cost={}us",
+                claimVerdict.incoherent(), claimVerdict.reason(), claimMicros);
+
+        // When the improvement claim is provably incoherent, drop the fabricated
+        // number and mechanism and present it neutrally - deliberately WITHOUT
+        // asserting optimality as a blanket default (that would wrongly suppress
+        // valid suggestions like bubble sort's O(n log n)). Unverifiable-but-not-
+        // incoherent claims are left untouched here; the prompt handles those.
+        String suggestedTime = result.suggestedTimeComplexity();
+        String efficiency = result.efficiencySuggestions();
+        if (claimVerdict.incoherent()) {
+            suggestedTime = null;
+            efficiency = NO_VERIFIED_IMPROVEMENT;
+        }
+
         Analysis analysis = new Analysis();
         analysis.setCodeSnippet(codeSnippet);
         analysis.setPattern(pattern);
@@ -57,8 +81,8 @@ public class AnalysisService {
         analysis.setReadability(result.readability());
         analysis.setStructure(result.structure());
         analysis.setStyleSuggestions(result.styleSuggestions());
-        analysis.setSuggestedTimeComplexity(result.suggestedTimeComplexity());
-        analysis.setEfficiencySuggestions(result.efficiencySuggestions());
+        analysis.setSuggestedTimeComplexity(suggestedTime);
+        analysis.setEfficiencySuggestions(efficiency);
         analysis.setOverallScore(result.overallScore());
         analysis.setCodeQuality(result.codeQuality());
         analysis.setMaintainability(result.maintainability());
