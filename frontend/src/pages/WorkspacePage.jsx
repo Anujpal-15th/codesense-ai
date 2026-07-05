@@ -108,19 +108,19 @@ function WorkspacePage() {
         panel below is self-null-safe and renders its own "no data yet" state
         pre-run, so there is no separate empty-state branch here).
 
-        Grid: 3 columns (~40% / 30% / 30%, via fr units) x 2 rows on lg+.
-          col 1, both rows : editor (toolbar, wrap notice, Monaco, playback
-                              controls at the bottom of this same column)
-          col 2-3, row 1   : outcome/recursion/narrative strip, spanning only
-                              the call-stack + memory columns' combined width
-          col 2, row 2     : Call Stack
-          col 3, row 2     : Memory
-        Below the grid, full width : Variables (never inside the 3-col row).
-        Collapses to a single stacked column below `lg`, same convention used
-        elsewhere on this page.
+        Two top-level columns on lg+ (~40% / ~60%, via fr units), both
+        top-aligned:
+          left  : editor (toolbar, wrap notice, Monaco, playback controls).
+          right : outcome/recursion/narrative strip stacked ABOVE a Call Stack
+                  + Memory sub-grid. Because the right column is its own flow,
+                  Call Stack + Memory sit at the top next to the editor even
+                  when the narrative strip is empty (pre-run) - no phantom row
+                  pushes them to the vertical middle.
+        Below, full width : Variables (never inside the columns above).
+        Collapses to a single stacked column below `lg`.
       */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,4fr)_minmax(0,3fr)_minmax(0,3fr)] lg:items-start">
-        <div className="space-y-3 lg:col-start-1 lg:row-start-1 lg:row-span-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)] lg:items-start">
+        <div className="space-y-3">
           <EditorToolbar
             theme={theme}
             onThemeChange={setTheme}
@@ -146,20 +146,16 @@ function WorkspacePage() {
           <PlaybackControls />
         </div>
 
-        <div className="space-y-3 lg:col-start-2 lg:col-span-2 lg:row-start-1">
+        <div className="space-y-3">
           <OutcomeBanner />
           <RecursionBadge />
           <ExecutionNarrative code={code} />
-        </div>
-
-        <div className="lg:col-start-2 lg:row-start-2">
-          <CallStackPanel />
-        </div>
-
-        <div className="lg:col-start-3 lg:row-start-2">
-          <div className="rounded-lg border border-line bg-paper-raised p-4">
-            <h2 className="mb-3 font-mono text-xs font-semibold tracking-widest text-ink-soft uppercase">Memory</h2>
-            <MemoryView />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <CallStackPanel />
+            <div className="rounded-lg border border-line bg-paper-raised p-4">
+              <h2 className="mb-3 font-mono text-xs font-semibold tracking-widest text-ink-soft uppercase">Memory</h2>
+              <MemoryView />
+            </div>
           </div>
         </div>
       </div>
