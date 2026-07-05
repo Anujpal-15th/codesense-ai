@@ -3,15 +3,30 @@ import { selectCurrentStep, useExecutionStore } from '../../store/executionStore
 function collectObjectRefs(step) {
   const refs = new Map()
 
+  function register(value, label) {
+    if (!refs.has(value.identityHash)) {
+      refs.set(value.identityHash, { objectSummary: value, referencedBy: new Set() })
+    }
+    refs.get(value.identityHash).referencedBy.add(label)
+  }
+
   function walk(value, label) {
     if (!value) return
     if (value.valueKind === 'object') {
-      if (!refs.has(value.identityHash)) {
-        refs.set(value.identityHash, { objectSummary: value, referencedBy: new Set() })
-      }
-      refs.get(value.identityHash).referencedBy.add(label)
+      register(value, label)
       value.fields.forEach((f) => walk(f.value, `${label}.${f.name}`))
     } else if (value.valueKind === 'array') {
+      value.elements.forEach((el, i) => walk(el, `${label}[${i}]`))
+    } else if (value.valueKind === 'map') {
+      // Maps/sets/lists carry identityHash too, so they appear as heap objects
+      // and their contained objects still surface for aliasing detection.
+      register(value, label)
+      value.entries.forEach((e, i) => {
+        walk(e.key, `${label}.key[${i}]`)
+        walk(e.value, `${label}.value[${i}]`)
+      })
+    } else if (value.valueKind === 'set' || value.valueKind === 'list') {
+      register(value, label)
       value.elements.forEach((el, i) => walk(el, `${label}[${i}]`))
     }
   }

@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { isJavaCollection, isLinkedListNode, isTreeNode } from './nodeShape'
 import LinkedListView from './LinkedListView'
 import TreeView from './TreeView'
+import MapView from './MapView'
+import SetView from './SetView'
+import ListView from './ListView'
 import CollectionFallbackCard from './CollectionFallbackCard'
 
 function LeafBadge({ name, text, italic = false }) {
@@ -94,6 +97,13 @@ function ValueRenderer({ name, declaredType, value, depth = 0, visited }) {
 
     case 'array':
       return <ArrayBoxes name={name} value={value} declaredType={declaredType} />
+
+    case 'map':
+      return <MapView name={name} value={value} />
+    case 'set':
+      return <SetView name={name} value={value} />
+    case 'list':
+      return <ListView name={name} value={value} />
 
     case 'object': {
       if (isJavaCollection(value)) {

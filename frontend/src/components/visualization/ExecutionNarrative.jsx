@@ -14,6 +14,10 @@ function formatLiteral(value) {
       return `${value.componentType}[${value.length}]`
     case 'object':
       return value.type
+    case 'map':
+    case 'set':
+    case 'list':
+      return `${value.type}(${value.size})`
     default:
       return '?'
   }
