@@ -5,7 +5,13 @@ import ConsoleOutputPanel from '../components/workspace/ConsoleOutputPanel'
 import EditorToolbar from '../components/workspace/EditorToolbar'
 import { reconstructExamplePlainText } from '../components/workspace/exampleSnippet'
 import WorkspaceEditor from '../components/workspace/WorkspaceEditor'
-import StructuralVisualizer from '../components/visualization/StructuralVisualizer'
+import CallStackPanel from '../components/execution/CallStackPanel'
+import OutcomeBanner from '../components/execution/OutcomeBanner'
+import PlaybackControls from '../components/execution/PlaybackControls'
+import ExecutionNarrative from '../components/visualization/ExecutionNarrative'
+import MemoryView from '../components/visualization/MemoryView'
+import RecursionBadge from '../components/visualization/RecursionBadge'
+import VariablesPanel from '../components/visualization/VariablesPanel'
 import { useAnalysisStore } from '../store/analysisStore'
 import { useExecutionStore } from '../store/executionStore'
 
@@ -20,6 +26,7 @@ function WorkspacePage() {
 
   const analysisSubmit = useAnalysisStore((state) => state.submit)
   const trace = useExecutionStore((state) => state.trace)
+  const wasWrapped = useExecutionStore((state) => state.wasWrapped)
   const isVisualizing = useExecutionStore((state) => state.isLoading)
   const executionError = useExecutionStore((state) => state.error)
   const executionSubmit = useExecutionStore((state) => state.submit)
@@ -69,7 +76,7 @@ function WorkspacePage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
+    <div className="mx-auto max-w-[1800px] space-y-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-xl font-extrabold text-ink">Workspace</h1>
         <div className="flex items-center gap-3">
@@ -95,37 +102,69 @@ function WorkspacePage() {
 
       {executionError && <p className="text-sm text-correct">{executionError}</p>}
 
-      <div>
-        <EditorToolbar
-          theme={theme}
-          onThemeChange={setTheme}
-          onFormat={handleFormat}
-          onClear={handleClear}
-          onExample={handleExample}
-          onCopy={handleCopy}
-          disabled={isLocked}
-        />
-        <WorkspaceEditor
-          code={code}
-          onCodeChange={handleCodeChange}
-          height="360px"
-          theme={theme}
-          onEditorMount={handleEditorMount}
-        />
+      {/*
+        Fixed, permanent Execute/Visualize structure - identical in shape
+        regardless of what the code does or how much data it produces (each
+        panel below is self-null-safe and renders its own "no data yet" state
+        pre-run, so there is no separate empty-state branch here).
+
+        Grid: 3 columns (~40% / 30% / 30%, via fr units) x 2 rows on lg+.
+          col 1, both rows : editor (toolbar, wrap notice, Monaco, playback
+                              controls at the bottom of this same column)
+          col 2-3, row 1   : outcome/recursion/narrative strip, spanning only
+                              the call-stack + memory columns' combined width
+          col 2, row 2     : Call Stack
+          col 3, row 2     : Memory
+        Below the grid, full width : Variables (never inside the 3-col row).
+        Collapses to a single stacked column below `lg`, same convention used
+        elsewhere on this page.
+      */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,4fr)_minmax(0,3fr)_minmax(0,3fr)] lg:items-start">
+        <div className="space-y-3 lg:col-start-1 lg:row-start-1 lg:row-span-2">
+          <EditorToolbar
+            theme={theme}
+            onThemeChange={setTheme}
+            onFormat={handleFormat}
+            onClear={handleClear}
+            onExample={handleExample}
+            onCopy={handleCopy}
+            disabled={isLocked}
+          />
+          {wasWrapped && (
+            <p className="rounded-lg border border-line bg-highlight-ink/10 p-3 text-sm text-highlight-ink">
+              This snippet had no runnable entry point, so a <code className="font-mono">Main</code> class and a
+              sample call were auto-generated to run it. The editor now shows the version that was actually executed.
+            </p>
+          )}
+          <WorkspaceEditor
+            code={code}
+            onCodeChange={handleCodeChange}
+            height="360px"
+            theme={theme}
+            onEditorMount={handleEditorMount}
+          />
+          <PlaybackControls />
+        </div>
+
+        <div className="space-y-3 lg:col-start-2 lg:col-span-2 lg:row-start-1">
+          <OutcomeBanner />
+          <RecursionBadge />
+          <ExecutionNarrative code={code} />
+        </div>
+
+        <div className="lg:col-start-2 lg:row-start-2">
+          <CallStackPanel />
+        </div>
+
+        <div className="lg:col-start-3 lg:row-start-2">
+          <div className="rounded-lg border border-line bg-paper-raised p-4">
+            <h2 className="mb-3 font-mono text-xs font-semibold tracking-widest text-ink-soft uppercase">Memory</h2>
+            <MemoryView />
+          </div>
+        </div>
       </div>
 
-      <motion.section
-        layout
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
-        className="space-y-3"
-      >
-        <h2 className="font-mono text-xs font-semibold tracking-widest text-ink-soft uppercase">
-          Live Visualization
-        </h2>
-        <StructuralVisualizer code={code} />
-      </motion.section>
+      <VariablesPanel />
 
       <motion.section
         layout
