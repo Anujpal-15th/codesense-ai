@@ -1,4 +1,5 @@
 import { selectCurrentStep, useExecutionStore } from '../../store/executionStore'
+import { useStepChanges } from './useStepChanges'
 
 function collectObjectRefs(step) {
   const refs = new Map()
@@ -42,6 +43,7 @@ function collectObjectRefs(step) {
 
 function MemoryView() {
   const step = useExecutionStore(selectCurrentStep)
+  const changes = useStepChanges()
 
   if (!step) {
     return <p className="text-sm text-ink-soft">No active frame.</p>
@@ -57,8 +59,14 @@ function MemoryView() {
     <div className="space-y-2">
       {entries.map(({ objectSummary, referencedBy }) => {
         const aliased = referencedBy.size > 1
+        // Flash the card when this object's shallow content changed this step.
+        // Keyed remount (`${hash}-${tick}`) replays the CSS animation.
+        const mutated = changes.changedHashes.has(objectSummary.identityHash)
         return (
-          <div key={objectSummary.identityHash} className="rounded-md border border-line bg-paper-raised p-2">
+          <div
+            key={mutated ? `${objectSummary.identityHash}-${changes.tick}` : objectSummary.identityHash}
+            className={`rounded-md border border-line bg-paper-raised p-2 ${mutated ? 'value-flash' : ''}`}
+          >
             <div className="flex items-center justify-between gap-2 font-mono text-xs">
               <span className="text-ink">
                 {objectSummary.type} <span className="text-ink-soft">#{objectSummary.identityHash}</span>

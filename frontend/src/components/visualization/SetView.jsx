@@ -1,9 +1,11 @@
 import ValueRenderer from './ValueRenderer'
 import { shortType, valueKey } from './traceValue'
+import { PopIn } from './StepChanges'
+import { setElemPath } from './stepDiff'
 
 // Semantic view of a java.util.Set: real elements as chips (from SetSummary).
-// Keyed by element identity so the animation layer can target added elements.
-function SetView({ name, value }) {
+// Keyed by element identity; a newly-added element pops in.
+function SetView({ name, value, path = null }) {
   const { type, size, elements, truncated } = value
 
   return (
@@ -16,12 +18,13 @@ function SetView({ name, value }) {
       ) : (
         <div className="flex flex-wrap gap-1">
           {elements.map((element) => (
-            <div
+            <PopIn
               key={valueKey(element)}
+              path={path != null ? setElemPath(path, element) : null}
               className="rounded-md border border-line bg-paper-raised px-2 py-1"
             >
               <ValueRenderer name="" declaredType="" value={element} depth={1} visited={new Set()} />
-            </div>
+            </PopIn>
           ))}
           {truncated && (
             <div className="self-center font-mono text-xs text-ink-soft italic">… {size} total</div>

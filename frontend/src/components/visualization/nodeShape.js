@@ -41,3 +41,25 @@ export function isTreeNode(objectSummary) {
 export function findField(objectSummary, names) {
   return objectSummary.fields.find((f) => names.includes(f.name))
 }
+
+const BOXED_PRIMITIVE_TYPES = new Set([
+  'java.lang.Integer',
+  'java.lang.Long',
+  'java.lang.Short',
+  'java.lang.Byte',
+  'java.lang.Double',
+  'java.lang.Float',
+  'java.lang.Boolean',
+  'java.lang.Character',
+])
+
+/**
+ * If `objectSummary` is a boxed primitive wrapper (Integer, Long, ...), returns
+ * its inner primitive value; otherwise null. Lets the renderer show `3` instead
+ * of a collapsed `java.lang.Integer` object — cleaner, and flashable as a leaf.
+ */
+export function boxedInnerValue(objectSummary) {
+  if (objectSummary.valueKind !== 'object' || !BOXED_PRIMITIVE_TYPES.has(objectSummary.type)) return null
+  const field = objectSummary.fields?.find((f) => f.name === 'value')
+  return field ? field.value : null
+}

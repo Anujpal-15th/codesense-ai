@@ -1,11 +1,13 @@
 import { useState } from 'react'
-import { isJavaCollection, isLinkedListNode, isTreeNode } from './nodeShape'
+import { boxedInnerValue, isJavaCollection, isLinkedListNode, isTreeNode } from './nodeShape'
 import LinkedListView from './LinkedListView'
 import TreeView from './TreeView'
 import MapView from './MapView'
 import SetView from './SetView'
 import ListView from './ListView'
 import CollectionFallbackCard from './CollectionFallbackCard'
+import { Flashable, PopIn } from './StepChanges'
+import { fieldPath, indexPath } from './stepDiff'
 
 function LeafBadge({ name, text, italic = false }) {
   return (
@@ -24,21 +26,26 @@ function CycleBadge({ name, type, identityHash }) {
   )
 }
 
-function ArrayBoxes({ name, value }) {
+function ArrayBoxes({ name, value, path }) {
   return (
     <div className="space-y-1">
       <div className="font-mono text-xs text-ink-soft">
         {name}: {value.componentType}[{value.length}]
       </div>
       <div className="flex flex-wrap gap-1">
-        {value.elements.map((el, index) => (
-          <div key={index} className="flex flex-col items-center">
-            <div className="rounded-md border border-line bg-paper-raised px-2 py-1.5 font-mono text-sm text-ink">
-              <ValueRenderer name="" declaredType={value.componentType} value={el} depth={1} visited={new Set()} />
-            </div>
-            <div className="mt-0.5 font-mono text-[10px] text-ink-soft">{index}</div>
-          </div>
-        ))}
+        {value.elements.map((el, index) => {
+          const cellPath = path != null ? indexPath(path, index) : null
+          return (
+            <PopIn key={index} path={cellPath} className="flex flex-col items-center">
+              <Flashable path={cellPath}>
+                <div className="rounded-md border border-line bg-paper-raised px-2 py-1.5 font-mono text-sm text-ink">
+                  <ValueRenderer name="" declaredType={value.componentType} value={el} depth={1} visited={new Set()} path={cellPath} />
+                </div>
+              </Flashable>
+              <div className="mt-0.5 font-mono text-[10px] text-ink-soft">{index}</div>
+            </PopIn>
+          )
+        })}
         {value.truncated && (
           <div className="self-center font-mono text-xs text-ink-soft italic">… truncated</div>
         )}
@@ -47,7 +54,7 @@ function ArrayBoxes({ name, value }) {
   )
 }
 
-function GenericObjectCard({ name, value, depth, visited }) {
+function GenericObjectCard({ name, value, depth, visited, path }) {
   const [isExpanded, setIsExpanded] = useState(depth < 1)
 
   return (
@@ -71,6 +78,7 @@ function GenericObjectCard({ name, value, depth, visited }) {
               value={field.value}
               depth={depth + 1}
               visited={visited}
+              path={path != null ? fieldPath(path, field.name) : null}
             />
           ))}
           {value.truncated && (
@@ -82,30 +90,37 @@ function GenericObjectCard({ name, value, depth, visited }) {
   )
 }
 
-function ValueRenderer({ name, declaredType, value, depth = 0, visited }) {
+function ValueRenderer({ name, declaredType, value, depth = 0, visited, path = null }) {
   const seen = visited ?? new Set()
 
   switch (value.valueKind) {
     case 'primitive':
-      return <LeafBadge name={name} text={value.literal} />
+      return <Flashable path={path}><LeafBadge name={name} text={value.literal} /></Flashable>
     case 'string':
-      return <LeafBadge name={name} text={`"${value.value}"${value.truncated ? '…' : ''}`} />
+      return <Flashable path={path}><LeafBadge name={name} text={`"${value.value}"${value.truncated ? '…' : ''}`} /></Flashable>
     case 'null':
-      return <LeafBadge name={name} text="null" italic />
+      return <Flashable path={path}><LeafBadge name={name} text="null" italic /></Flashable>
     case 'truncated':
       return <LeafBadge name={name} text={`<${value.reason}>`} italic />
 
     case 'array':
-      return <ArrayBoxes name={name} value={value} declaredType={declaredType} />
+      return <ArrayBoxes name={name} value={value} declaredType={declaredType} path={path} />
 
     case 'map':
-      return <MapView name={name} value={value} />
+      return <MapView name={name} value={value} path={path} />
     case 'set':
-      return <SetView name={name} value={value} />
+      return <SetView name={name} value={value} path={path} />
     case 'list':
-      return <ListView name={name} value={value} />
+      return <ListView name={name} value={value} path={path} />
 
     case 'object': {
+      // Boxed primitive wrappers (Integer, Long, ...) render as their inner
+      // value leaf - cleaner than a collapsed object, and flashable.
+      const boxed = boxedInnerValue(value)
+      if (boxed) {
+        const text = boxed.valueKind === 'string' ? `"${boxed.value}"` : boxed.literal ?? String(boxed.value ?? '')
+        return <Flashable path={path}><LeafBadge name={name} text={text} /></Flashable>
+      }
       if (isJavaCollection(value)) {
         return <CollectionFallbackCard name={name} value={value} />
       }
@@ -121,7 +136,7 @@ function ValueRenderer({ name, declaredType, value, depth = 0, visited }) {
       if (isTreeNode(value)) {
         return <TreeView rootName={name} rootValue={value} />
       }
-      return <GenericObjectCard name={name} value={value} depth={depth} visited={nextSeen} />
+      return <GenericObjectCard name={name} value={value} depth={depth} visited={nextSeen} path={path} />
     }
     default:
       return null

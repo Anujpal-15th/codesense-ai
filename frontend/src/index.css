@@ -21,6 +21,29 @@
   border-left: 3px solid rgb(168, 85, 247);
 }
 
+/* Generic value-change flash for the Variables/Memory panels (step diffing).
+   Applied via a keyed remount so it replays on each step transition. Kept short
+   (< the 600ms autoplay interval) so it always finishes before the next step. */
+@keyframes value-flash {
+  0% {
+    background-color: rgba(169, 120, 27, 0.45);
+    box-shadow: 0 0 0 2px rgba(169, 120, 27, 0.45);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+.value-flash {
+  animation: value-flash 0.5s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .value-flash {
+    animation: none;
+  }
+}
+
 .landing-grid-bg {
   background-color: var(--color-paper);
   background-image:
