@@ -31,13 +31,23 @@ public interface LlmClient {
             - "styleSuggestions": one to two sentences of concrete, actionable advice for \
             improving readability and structure. If the code is already excellent in both, \
             say so explicitly instead of inventing a nitpick.
-            - "suggestedTimeComplexity": the best time complexity you believe is achievable \
-            for this problem, in Big-O notation. If "isOptimal" is true, this MUST equal \
-            "timeComplexity" exactly. If "isOptimal" is false, give the better complexity \
-            that a correct optimal solution would achieve.
-            - "efficiencySuggestions": one to two sentences explaining how to reach the \
-            suggested complexity, or, if already optimal, a short confirmation sentence \
-            praising the efficiency.
+            - "suggestedTimeComplexity": the best time complexity ACTUALLY achievable for \
+            this problem, in Big-O notation. If "isOptimal" is true, this MUST equal \
+            "timeComplexity" exactly. If "isOptimal" is false, this MUST be a complexity \
+            that a specific, named, well-known algorithm genuinely achieves for THIS \
+            problem - never an aspirational or generic guess. Crucially: many correct \
+            solutions are already optimal and cannot be improved asymptotically (for \
+            example, comparing every pair of points is inherently quadratic; there is no \
+            faster general solution). When that is the case, set "isOptimal" to true and \
+            make this field equal "timeComplexity" - do NOT invent a lower bound you \
+            cannot back with a concrete algorithm, and do NOT suggest a technique the \
+            code already uses.
+            - "efficiencySuggestions": if "isOptimal" is false, you MUST name the specific \
+            algorithm or technique (e.g. "merge sort", "a hash map", "binary search") that \
+            achieves "suggestedTimeComplexity" and briefly say how, in one to two \
+            sentences - and that technique must be one the code does not already use. If \
+            the code is already optimal, state plainly that no asymptotic improvement is \
+            possible for this problem and briefly why.
 
             Additionally, provide a broader quality assessment:
             - "overallScore": a single integer from 0 to 100 summarizing overall code \
