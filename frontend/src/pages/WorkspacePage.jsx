@@ -112,11 +112,11 @@ function WorkspacePage() {
         top-aligned:
           left  : editor (toolbar, wrap notice, Monaco, playback controls).
           right : outcome/recursion/narrative strip stacked ABOVE a Call Stack
-                  + Memory sub-grid. Because the right column is its own flow,
-                  Call Stack + Memory sit at the top next to the editor even
-                  when the narrative strip is empty (pre-run) - no phantom row
-                  pushes them to the vertical middle.
-        Below, full width : Variables (never inside the columns above).
+                  + Variables sub-grid. Because the right column is its own
+                  flow, Call Stack + Variables sit at the top next to the
+                  editor even when the narrative strip is empty (pre-run) - no
+                  phantom row pushes them to the vertical middle.
+        Below, full width : Memory (never inside the columns above).
         Collapses to a single stacked column below `lg`.
       */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)] lg:items-start">
@@ -152,14 +152,14 @@ function WorkspacePage() {
           <ExecutionNarrative code={code} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <CallStackPanel />
-            <div className="rounded-lg border border-line bg-paper-raised p-4">
-              <MemoryView />
-            </div>
+            <VariablesPanel />
           </div>
         </div>
       </div>
 
-      <VariablesPanel />
+      <div className="rounded-lg border border-line bg-paper-raised p-4">
+        <MemoryView />
+      </div>
 
       <motion.section
         layout
