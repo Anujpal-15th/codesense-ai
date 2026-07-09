@@ -49,6 +49,13 @@ execution:
       image: ${EXECUTION_SANDBOX_IMAGE:codesense/execution-sandbox:latest}
       memory: ${EXECUTION_SANDBOX_MEMORY:256m}
       cpus: ${EXECUTION_SANDBOX_CPUS:1.0}
+      # User-defined bridge network the sandbox container joins. Egress is
+      # blocked by a host DOCKER-USER iptables rule, NOT by --network none
+      # (which would also break the JDWP -p publish). Provision this network +
+      # rule once via docker/execution-sandbox/provision-sandbox-network.sh
+      # before enabling docker mode - if absent, the container has full
+      # internet access. Linux deployment only; dev uses local-process.
+      network: ${EXECUTION_SANDBOX_NETWORK:codesense-sandbox-net}
     readiness-timeout-seconds: ${EXECUTION_READINESS_TIMEOUT_SECONDS:10}
   limits:
     max-steps: ${EXECUTION_MAX_STEPS:2000}

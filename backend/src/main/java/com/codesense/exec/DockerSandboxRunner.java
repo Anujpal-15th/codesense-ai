@@ -24,19 +24,30 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Runs the debuggee inside a locked-down Docker container: no network
- * access, bounded memory/CPU/pids, a read-only root filesystem except a
- * small tmpfs scratch area, and a hard wall-clock timeout enforced by the
- * backend itself (not just relying on Docker/the container). This is the
- * real sandbox - see the security comment on execution.sandbox.type in
- * application.yml.
+ * Runs the debuggee inside a locked-down Docker container: bounded
+ * memory/CPU/pids, a read-only root filesystem except a small tmpfs scratch
+ * area, a hard wall-clock timeout enforced by the backend itself, and no
+ * outbound network access. The JDWP debug port is published to host loopback
+ * only ({@code 127.0.0.1}), never to all interfaces - it is unauthenticated
+ * remote code execution and must not be LAN-reachable.
  *
- * <p><b>Not exercised in the environment this was developed in</b> (no
- * Docker available there). Verify on a Docker-capable machine before
- * relying on its isolation guarantees - see CLAUDE.md for the specific
- * claims that still need re-confirming (port-publish path, readiness-line
- * buffering behavior, whether the explicit {@code docker kill} backstop in
- * {@link DockerSandboxHandle} is actually necessary).
+ * <p><b>Egress blocking is NOT self-contained in these {@code docker run}
+ * flags.</b> {@code --network none}/{@code --internal} would block egress but
+ * ALSO disable the {@code -p} port publishing the JDI attach needs (Docker
+ * publishes ports over the same bridge/NAT path those modes remove - verified).
+ * So the container joins a normal user-defined bridge network
+ * ({@code execution.sandbox.docker.network}, default {@code codesense-sandbox-net})
+ * and egress is instead dropped by a host-level {@code DOCKER-USER} iptables
+ * rule. That network and rule are a <b>deployment prerequisite</b> provisioned
+ * once by {@code backend/docker/execution-sandbox/provision-sandbox-network.sh};
+ * if they are absent the container has FULL internet access. See CLAUDE.md.
+ *
+ * <p><b>Validated on Linux only.</b> This runner's isolation is designed for
+ * and must be verified on the Linux deployment host. It is intentionally NOT
+ * verified on the Windows Docker Desktop dev machine, where {@code DOCKER-USER}
+ * iptables is not cleanly reachable (containers run in a managed VM); dev uses
+ * {@code local-process} instead. See CLAUDE.md for the full rationale and the
+ * on-host verification checklist.
  */
 @Slf4j
 @Service
@@ -53,13 +64,16 @@ class DockerSandboxRunner implements SandboxRunner {
     private final String image;
     private final String memory;
     private final String cpus;
+    private final String network;
 
     DockerSandboxRunner(@Value("${execution.sandbox.docker.image}") String image,
                          @Value("${execution.sandbox.docker.memory}") String memory,
-                         @Value("${execution.sandbox.docker.cpus}") String cpus) {
+                         @Value("${execution.sandbox.docker.cpus}") String cpus,
+                         @Value("${execution.sandbox.docker.network}") String network) {
         this.image = image;
         this.memory = memory;
         this.cpus = cpus;
+        this.network = network;
     }
 
     @Override
@@ -155,8 +169,11 @@ class DockerSandboxRunner implements SandboxRunner {
         command.add("docker");
         command.add("run");
         command.add("--rm");
+        // A normal user-defined bridge (so -p works); egress is dropped by the
+        // host DOCKER-USER iptables rule provisioned alongside this network -
+        // NOT by these flags. See the class javadoc and CLAUDE.md.
         command.add("--network");
-        command.add("none");
+        command.add(network);
         command.add("--memory");
         command.add(memory);
         command.add("--memory-swap");
@@ -170,8 +187,10 @@ class DockerSandboxRunner implements SandboxRunner {
         command.add("/tmp:rw,size=16m,mode=1777");
         command.add("-v");
         command.add(classOutputDir.toAbsolutePath() + ":/work:ro");
+        // Loopback-only: the JDWP port is unauthenticated RCE, never expose it
+        // beyond the host. Binding 0.0.0.0 would make it LAN-reachable.
         command.add("-p");
-        command.add(hostPort + ":" + CONTAINER_DEBUG_PORT);
+        command.add("127.0.0.1:" + hostPort + ":" + CONTAINER_DEBUG_PORT);
         command.add("--name");
         command.add(containerName);
         command.add(image);
