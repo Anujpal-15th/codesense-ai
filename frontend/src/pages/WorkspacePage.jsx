@@ -53,7 +53,7 @@ function EmptyState({ message }) {
 function WorkspacePage() {
   const [code, setCode] = useState(DEFAULT_CODE)
   const [copied, setCopied] = useState(false)
-  const [activeTab, setActiveTab] = useState('result')
+  const [activeTab, setActiveTab] = useState('analysis')
   // Which action is mid-flight, so only the clicked button shows a spinner
   // (Run and Visualize share the execution store's single isLoading flag).
   const [pendingAction, setPendingAction] = useState(null)
@@ -252,15 +252,15 @@ function WorkspacePage() {
         {/* LEFT — results/analysis panel with tabs */}
         <section
           style={leftStyle}
-          className="flex min-h-0 min-w-0 flex-col rounded-[15px] border-b border-line lg:h-full lg:border-b-0 lg:border-r"
+          className="flex min-h-0 min-w-0 flex-col rounded-[15px] border-b border-line bg-paper-raised lg:h-full lg:border-b-0 lg:border-r"
         >
-          <div className="flex shrink-0 gap-1 rounded-t-[15px] border-b border-line bg-paper-raised px-3">
+          <div className="flex shrink-0 gap-1 rounded-t-[15px] border-b border-line bg-paper-raised px-4">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`-mb-px border-b-2 px-4 py-2.5 font-mono text-sm font-semibold ${
+                className={`-mb-px border-b-2 px-4 py-3 font-mono text-sm font-semibold ${
                   activeTab === tab.id
                     ? 'border-primary text-ink'
                     : 'border-transparent text-ink-soft hover:text-ink'

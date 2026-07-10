@@ -19,7 +19,7 @@ function EditorToolbar({ onFormat, onClear, onExample, onCopy, copied, disabled 
         Java
       </span>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-3">
         <ToolbarButton onClick={onFormat} disabled={disabled} label="Format" />
         <ToolbarButton onClick={onExample} disabled={disabled} label="Example" />
         <ToolbarButton onClick={onClear} disabled={disabled} label="Clear" />
