@@ -18,8 +18,8 @@ function ListSection({ label, items, hasNewMetrics }) {
   if (!hasNewMetrics) {
     return (
       <div>
-        <div className="text-paper-raised/60">{label}</div>
-        <p className="text-paper-raised/50 italic">Not available for this analysis.</p>
+        <div className="text-ink-soft">{label}</div>
+        <p className="text-ink-soft italic">Not available for this analysis.</p>
       </div>
     )
   }
@@ -27,16 +27,16 @@ function ListSection({ label, items, hasNewMetrics }) {
   if (!items || items.length === 0) {
     return (
       <div>
-        <div className="text-paper-raised/60">{label}</div>
-        <p className="text-paper-raised">No {label.toLowerCase()} found.</p>
+        <div className="text-ink-soft">{label}</div>
+        <p className="text-ink">No {label.toLowerCase()} found.</p>
       </div>
     )
   }
 
   return (
     <div>
-      <div className="text-paper-raised/60">{label}</div>
-      <ul className="list-inside list-disc space-y-1 text-paper-raised">
+      <div className="text-ink-soft">{label}</div>
+      <ul className="list-inside list-disc space-y-1 text-ink">
         {items.map((item, i) => (
           <li key={i}>{item}</li>
         ))}

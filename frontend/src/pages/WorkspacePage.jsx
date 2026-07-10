@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { NavLink } from 'react-router-dom'
 import AnalysisPanel from '../components/workspace/AnalysisPanel'
 import ConsoleOutputPanel from '../components/workspace/ConsoleOutputPanel'
 import EditorToolbar from '../components/workspace/EditorToolbar'
@@ -16,67 +16,152 @@ import { useAnalysisStore } from '../store/analysisStore'
 import { useExecutionStore } from '../store/executionStore'
 
 const DEFAULT_CODE = `public class Main {\n    public static void main(String[] args) {\n        \n    }\n}\n`
-const ANALYSIS_DEBOUNCE_MS = 1200
+
+const TABS = [
+  { id: 'result', label: 'Result' },
+  { id: 'analysis', label: 'Analysis' },
+  { id: 'visualize', label: 'Visualize' },
+]
+
+const navLinkClass = ({ isActive }) =>
+  `font-mono text-sm font-medium px-3 py-2 ${isActive ? 'text-ink' : 'text-ink-soft hover:text-ink'}`
+
+function Spinner() {
+  return (
+    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  )
+}
+
+function EmptyState({ message }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-line text-ink-soft">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <polyline points="8 9 11 12 8 15" />
+          <line x1="13" y1="15" x2="16" y2="15" />
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+        </svg>
+      </div>
+      <p className="max-w-xs text-sm text-ink-soft">{message}</p>
+    </div>
+  )
+}
 
 function WorkspacePage() {
   const [code, setCode] = useState(DEFAULT_CODE)
-  const [hasEdited, setHasEdited] = useState(false)
-  const [theme, setTheme] = useState('vs')
   const [copied, setCopied] = useState(false)
+  const [activeTab, setActiveTab] = useState('result')
+  // Which action is mid-flight, so only the clicked button shows a spinner
+  // (Run and Visualize share the execution store's single isLoading flag).
+  const [pendingAction, setPendingAction] = useState(null)
+  // The exact source that was actually compiled/run (may be an auto-generated
+  // wrapper). Shown read-only in the editor ONLY while the Visualize tab is
+  // active, since the trace's line numbers are valid only against it.
+  const [executedSource, setExecutedSource] = useState(null)
+  const [leftPct, setLeftPct] = useState(40)
+  const [dragging, setDragging] = useState(false)
+  const [isDesktop, setIsDesktop] = useState(true)
+
   const editorApiRef = useRef(null)
   const copiedTimerRef = useRef(null)
-  const visualizeRef = useRef(null)
+  const runRef = useRef(null)
+  const splitRef = useRef(null)
+  const draggingRef = useRef(false)
 
   const analysisSubmit = useAnalysisStore((state) => state.submit)
+  const isAnalyzing = useAnalysisStore((state) => state.isLoading)
+
   const trace = useExecutionStore((state) => state.trace)
-  const wasWrapped = useExecutionStore((state) => state.wasWrapped)
-  const isVisualizing = useExecutionStore((state) => state.isLoading)
+  const isExecuting = useExecutionStore((state) => state.isLoading)
   const executionError = useExecutionStore((state) => state.error)
   const executionSubmit = useExecutionStore((state) => state.submit)
-  const resetExecution = useExecutionStore((state) => state.reset)
 
-  const isLocked = !!trace
+  const isVisualizeTab = activeTab === 'visualize'
+  // Editor is only read-only while the Visualize tab is showing a trace - it
+  // stays editable everywhere else (no "Edit Code" button needed).
+  const isEditorLocked = isVisualizeTab && !!trace
+  const editorValue = isVisualizeTab && executedSource != null ? executedSource : code
 
-  const handleCodeChange = (value) => {
-    setHasEdited(true)
-    setCode(value)
+  const handleRun = () => {
+    if (!code.trim() || isExecuting) return
+    setActiveTab('result')
+    setPendingAction('run')
+    executionSubmit(code)
+      .then((response) => setExecutedSource(response.executedSourceCode))
+      .catch(() => {})
+      .finally(() => setPendingAction(null))
   }
 
-  useEffect(() => {
-    if (!hasEdited || !code.trim()) return
-
-    const timerId = setTimeout(() => {
-      analysisSubmit(code).catch(() => {})
-    }, ANALYSIS_DEBOUNCE_MS)
-
-    return () => clearTimeout(timerId)
-  }, [code, hasEdited, analysisSubmit])
+  const handleSubmit = () => {
+    if (!code.trim() || isAnalyzing) return
+    setActiveTab('analysis')
+    analysisSubmit(code).catch(() => {})
+  }
 
   const handleVisualize = () => {
-    if (!code.trim() || isVisualizing) return
+    if (!code.trim() || isExecuting) return
+    setActiveTab('visualize')
+    setPendingAction('visualize')
     executionSubmit(code)
-      .then((response) => {
-        setHasEdited(true)
-        setCode(response.executedSourceCode)
-      })
+      .then((response) => setExecutedSource(response.executedSourceCode))
       .catch(() => {})
+      .finally(() => setPendingAction(null))
   }
 
-  // Keep a ref to the latest handler so the window-level Ctrl/Cmd+Enter
-  // listener (registered once) always calls the current closure, not a stale
-  // one capturing the initial `code`.
-  visualizeRef.current = handleVisualize
-
+  // Ctrl/Cmd+Enter runs (the fast, no-AI path), matching LeetCode. Registered
+  // once with a ref to the latest handler to avoid stale-closure bugs.
+  runRef.current = handleRun
   useEffect(() => {
     const onKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault()
-        visualizeRef.current?.()
+        runRef.current?.()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
+
+  // Track desktop vs mobile so the drag-resized width only applies on lg+
+  // (below that the panels stack vertically and a % width would be wrong).
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const update = () => setIsDesktop(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+
+  // Draggable divider: recompute the left panel width from the pointer's x
+  // position within the split container, clamped so neither panel drops below 25%.
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!draggingRef.current || !splitRef.current) return
+      const rect = splitRef.current.getBoundingClientRect()
+      const pct = ((e.clientX - rect.left) / rect.width) * 100
+      setLeftPct(Math.min(75, Math.max(25, pct)))
+    }
+    const onUp = () => {
+      if (draggingRef.current) {
+        draggingRef.current = false
+        setDragging(false)
+      }
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  const handleDragStart = () => {
+    draggingRef.current = true
+    setDragging(true)
+  }
 
   const handleEditorMount = (editor, monaco) => {
     editorApiRef.current = { editor, monaco }
@@ -86,9 +171,9 @@ function WorkspacePage() {
     editorApiRef.current?.editor.getAction('editor.action.formatDocument')?.run()
   }
 
-  const handleClear = () => handleCodeChange('')
+  const handleClear = () => setCode('')
 
-  const handleExample = () => handleCodeChange(reconstructExamplePlainText())
+  const handleExample = () => setCode(reconstructExamplePlainText())
 
   const handleCopy = () => {
     navigator.clipboard
@@ -103,120 +188,162 @@ function WorkspacePage() {
 
   useEffect(() => () => clearTimeout(copiedTimerRef.current), [])
 
+  const leftStyle = isDesktop ? { width: `${leftPct}%` } : undefined
+
   return (
-    <div className="mx-auto max-w-[1800px] space-y-6 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-xl font-extrabold text-ink">Workspace</h1>
-        <div className="flex items-center gap-3">
-          {isLocked ? (
-            <button
-              type="button"
-              onClick={resetExecution}
-              className="rounded-full border border-line bg-paper-raised px-5 py-2 font-mono text-sm font-semibold text-ink hover:border-ink"
-            >
-              ← Edit Code
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleVisualize}
-              disabled={isVisualizing}
-              title="Run & Visualize (Ctrl+Enter)"
-              className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2 font-mono text-sm font-semibold text-paper-raised disabled:opacity-50"
-            >
-              {isVisualizing && (
-                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              )}
-              {isVisualizing ? 'Running…' : 'Run & Visualize'}
-            </button>
-          )}
+    <div className="flex h-screen flex-col bg-paper text-ink">
+      {/* TOP BAR: logo left · action buttons centered · nav right */}
+      <header className="grid shrink-0 grid-cols-3 items-center border-b border-line bg-paper-raised px-4 py-2">
+        <NavLink to="/" className="flex items-center gap-2 justify-self-start font-mono text-lg font-bold">
+          <span className="h-2 w-2 rounded-full bg-approve" />
+          codesense <span className="font-normal text-ink-soft">.ai</span>
+        </NavLink>
+
+        <div className="flex items-center gap-2 justify-self-center">
+          <button
+            type="button"
+            onClick={handleRun}
+            disabled={isExecuting}
+            title="Run — execute and see output (Ctrl+Enter)"
+            className="inline-flex items-center gap-2 rounded-lg border border-line bg-paper-raised px-4 py-2 font-mono text-sm font-semibold text-ink hover:border-ink disabled:opacity-50"
+          >
+            {pendingAction === 'run' && isExecuting && <Spinner />}
+            {pendingAction === 'run' && isExecuting ? 'Running…' : 'Run'}
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isAnalyzing}
+            title="Submit — analyze pattern & complexity"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-mono text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-50"
+          >
+            {isAnalyzing && <Spinner />}
+            {isAnalyzing ? 'Analyzing…' : 'Submit'}
+          </button>
+          <button
+            type="button"
+            onClick={handleVisualize}
+            disabled={isExecuting}
+            title="Visualize — step through execution"
+            className="inline-flex items-center gap-2 rounded-lg border border-line bg-paper-raised px-4 py-2 font-mono text-sm font-semibold text-ink hover:border-ink disabled:opacity-50"
+          >
+            {pendingAction === 'visualize' && isExecuting && <Spinner />}
+            {pendingAction === 'visualize' && isExecuting ? 'Running…' : 'Visualize'}
+          </button>
         </div>
-      </div>
 
-      {executionError && <p className="text-sm text-correct">{executionError}</p>}
+        <nav className="flex items-center gap-1 justify-self-end">
+          <NavLink to="/analyze" className={navLinkClass}>
+            Workspace
+          </NavLink>
+          <NavLink to="/history" className={navLinkClass}>
+            History
+          </NavLink>
+        </nav>
+      </header>
 
-      {/*
-        Fixed, permanent Execute/Visualize structure - identical in shape
-        regardless of what the code does or how much data it produces (each
-        panel below is self-null-safe and renders its own "no data yet" state
-        pre-run, so there is no separate empty-state branch here).
+      {/* SPLIT: results (left) | draggable divider | editor (right) */}
+      <div
+        ref={splitRef}
+        className={`flex min-h-0 flex-1 flex-col lg:flex-row ${dragging ? 'select-none' : ''}`}
+      >
+        {/* LEFT — results/analysis panel with tabs */}
+        <section
+          style={leftStyle}
+          className="flex min-h-0 flex-col border-b border-line lg:h-full lg:border-b-0 lg:border-r"
+        >
+          <div className="flex shrink-0 gap-1 border-b border-line bg-paper-raised px-3">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`-mb-px border-b-2 px-4 py-2.5 font-mono text-sm font-semibold ${
+                  activeTab === tab.id
+                    ? 'border-primary text-ink'
+                    : 'border-transparent text-ink-soft hover:text-ink'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-        Two top-level columns on lg+ (~40% / ~60%, via fr units), both
-        top-aligned:
-          left  : editor (toolbar, wrap notice, Monaco, playback controls).
-          right : outcome/recursion/narrative strip stacked ABOVE a Call Stack
-                  + Variables sub-grid. Because the right column is its own
-                  flow, Call Stack + Variables sit at the top next to the
-                  editor even when the narrative strip is empty (pre-run) - no
-                  phantom row pushes them to the vertical middle.
-        Below, full width : Memory (never inside the columns above).
-        Collapses to a single stacked column below `lg`.
-      */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,4fr)_minmax(0,6fr)] lg:items-start">
-        <div className="space-y-3">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {executionError && activeTab !== 'analysis' && (
+              <p className="mb-4 rounded-lg border border-correct/30 bg-correct/10 p-3 text-sm text-correct">
+                {executionError}
+              </p>
+            )}
+
+            {activeTab === 'result' &&
+              (trace ? (
+                <div className="space-y-4">
+                  <OutcomeBanner />
+                  <ConsoleOutputPanel />
+                </div>
+              ) : (
+                <EmptyState message="Run your code to see the execution outcome and console output here." />
+              ))}
+
+            {activeTab === 'analysis' && <AnalysisPanel />}
+
+            {activeTab === 'visualize' &&
+              (trace ? (
+                <div className="space-y-4">
+                  <OutcomeBanner />
+                  <RecursionBadge />
+                  <ExecutionNarrative code={editorValue} />
+                  <CallStackPanel />
+                  <VariablesPanel />
+                  <div className="rounded-lg border border-line bg-paper-raised p-4">
+                    <MemoryView />
+                  </div>
+                </div>
+              ) : (
+                <EmptyState message="Click Visualize to step through your code's execution line by line." />
+              ))}
+          </div>
+
+          {isVisualizeTab && trace && (
+            <div className="shrink-0 border-t border-line bg-paper-raised p-3">
+              <PlaybackControls />
+            </div>
+          )}
+        </section>
+
+        {/* DRAGGABLE DIVIDER (desktop only) */}
+        <div
+          onMouseDown={handleDragStart}
+          className="hidden w-1.5 shrink-0 cursor-col-resize bg-line transition-colors hover:bg-primary lg:block"
+          role="separator"
+          aria-orientation="vertical"
+        />
+
+        {/* RIGHT — code editor */}
+        <section className="flex min-h-0 flex-1 flex-col">
           <EditorToolbar
-            theme={theme}
-            onThemeChange={setTheme}
             onFormat={handleFormat}
             onClear={handleClear}
             onExample={handleExample}
             onCopy={handleCopy}
             copied={copied}
-            disabled={isLocked}
+            disabled={isEditorLocked}
           />
-          {wasWrapped && (
-            <p className="rounded-lg border border-line bg-highlight-ink/10 p-3 text-sm text-highlight-ink">
-              This snippet had no runnable entry point, so a <code className="font-mono">Main</code> class and a
-              sample call were auto-generated to run it. The editor now shows the version that was actually executed.
-            </p>
-          )}
-          <WorkspaceEditor
-            code={code}
-            onCodeChange={handleCodeChange}
-            height="360px"
-            theme={theme}
-            onEditorMount={handleEditorMount}
-          />
-          <PlaybackControls />
-        </div>
-
-        <div className="space-y-3">
-          <OutcomeBanner />
-          <RecursionBadge />
-          <ExecutionNarrative code={code} />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <CallStackPanel />
-            <VariablesPanel />
+          <div className="h-[55vh] min-h-0 lg:h-auto lg:flex-1">
+            <WorkspaceEditor
+              code={editorValue}
+              onCodeChange={setCode}
+              onEditorMount={handleEditorMount}
+              readOnly={isEditorLocked}
+              highlightActive={isVisualizeTab}
+            />
           </div>
-        </div>
+        </section>
+
+        {/* Overlay while dragging so the pointer stays captured over Monaco. */}
+        {dragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
       </div>
-
-      <div className="rounded-lg border border-line bg-paper-raised p-4">
-        <MemoryView />
-      </div>
-
-      <motion.section
-        layout
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, delay: 0.05 }}
-        className="space-y-3"
-      >
-        <ConsoleOutputPanel />
-      </motion.section>
-
-      <motion.section
-        layout
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25, delay: 0.1 }}
-        className="space-y-3"
-      >
-        <AnalysisPanel hasEdited={hasEdited} />
-      </motion.section>
     </div>
   )
 }

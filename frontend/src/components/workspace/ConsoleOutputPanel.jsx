@@ -7,7 +7,7 @@ function ConsoleOutputPanel() {
   if (!trace) {
     return (
       <p className="rounded-lg border border-line bg-paper-raised p-6 text-sm text-ink-soft">
-        Click "Run & Visualize" to see console output here.
+        Click "Run" to execute your code and see the output here.
       </p>
     )
   }

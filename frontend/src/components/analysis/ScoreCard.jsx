@@ -29,19 +29,19 @@ function ScoreCard({ overallScore, codeQuality, maintainability }) {
         <>
           {codeQuality != null && (
             <div className="flex justify-between">
-              <span className="text-paper-raised/60">Code Quality</span>
+              <span className="text-ink-soft">Code Quality</span>
               <span className={`font-semibold ${ratingTone(codeQuality)}`}>{codeQuality}</span>
             </div>
           )}
           {maintainability != null && (
             <div className="flex justify-between">
-              <span className="text-paper-raised/60">Maintainability</span>
+              <span className="text-ink-soft">Maintainability</span>
               <span className={`font-semibold ${ratingTone(maintainability)}`}>{maintainability}</span>
             </div>
           )}
         </>
       ) : (
-        <p className="text-paper-raised/50 italic">Not available for this analysis.</p>
+        <p className="text-ink-soft italic">Not available for this analysis.</p>
       )}
     </AIInsightCard>
   )

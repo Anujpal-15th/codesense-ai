@@ -29,7 +29,7 @@ function PlaybackControls() {
         type="button"
         onClick={isPlaying ? pause : play}
         disabled={currentStepIndex >= lastIndex && !isPlaying}
-        className="rounded-md bg-ink px-3 py-1.5 font-mono text-sm font-semibold text-paper-raised disabled:opacity-40"
+        className="rounded-md bg-primary px-3 py-1.5 font-mono text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-40"
       >
         {isPlaying ? 'Pause' : 'Play'}
       </button>
@@ -49,7 +49,7 @@ function PlaybackControls() {
         max={lastIndex}
         value={currentStepIndex}
         onChange={(e) => goToStep(Number(e.target.value))}
-        className="flex-1 accent-ink"
+        className="flex-1 accent-primary"
       />
 
       <span className="font-mono text-sm whitespace-nowrap text-ink-soft">

@@ -3,13 +3,21 @@ import Editor from '@monaco-editor/react'
 import { selectCurrentLine, useExecutionStore } from '../../store/executionStore'
 import { registerJavaFormatter } from './formatJava'
 
-function WorkspaceEditor({ code, onCodeChange, height = '360px', theme = 'vs', language = 'java', onEditorMount }) {
+function WorkspaceEditor({
+  code,
+  onCodeChange,
+  height = '100%',
+  theme = 'vs',
+  language = 'java',
+  onEditorMount,
+  readOnly = false,
+  highlightActive = true,
+}) {
   const editorRef = useRef(null)
   const monacoRef = useRef(null)
   const decorationsRef = useRef(null)
 
   const currentLine = useExecutionStore(selectCurrentLine)
-  const trace = useExecutionStore((state) => state.trace)
 
   function handleMount(editor, monaco) {
     editorRef.current = editor
@@ -23,7 +31,10 @@ function WorkspaceEditor({ code, onCodeChange, height = '360px', theme = 'vs', l
     const collection = decorationsRef.current
     if (!collection) return
 
-    if (currentLine == null) {
+    // The current-line highlight only makes sense in the Visualize view, where
+    // the editor shows the exact executed source. Gated so Run (which keeps the
+    // editor editable on the user's own code) never paints a stale highlight.
+    if (!highlightActive || currentLine == null) {
       collection.clear()
       return
     }
@@ -40,10 +51,10 @@ function WorkspaceEditor({ code, onCodeChange, height = '360px', theme = 'vs', l
       },
     ])
     editorRef.current.revealLineInCenterIfOutsideViewport(currentLine)
-  }, [currentLine])
+  }, [currentLine, highlightActive])
 
   return (
-    <div className="overflow-hidden rounded-b-lg border border-t-0 border-line">
+    <div className="h-full overflow-hidden">
       <Editor
         height={height}
         language={language}
@@ -51,7 +62,7 @@ function WorkspaceEditor({ code, onCodeChange, height = '360px', theme = 'vs', l
         value={code}
         onChange={(value) => onCodeChange(value ?? '')}
         onMount={handleMount}
-        options={{ readOnly: !!trace }}
+        options={{ readOnly, automaticLayout: true }}
       />
     </div>
   )

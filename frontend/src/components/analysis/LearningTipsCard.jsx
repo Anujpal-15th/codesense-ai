@@ -21,16 +21,16 @@ function LearningTipsCard({ learningTips, hasNewMetrics }) {
     <AIInsightCard icon={<LearningTipsIcon />} title="Learning Tips">
       {hasNewMetrics ? (
         hasTips ? (
-          <ul className="list-inside list-disc space-y-1 text-paper-raised">
+          <ul className="list-inside list-disc space-y-1 text-ink">
             {learningTips.map((tip, i) => (
               <li key={i}>{tip}</li>
             ))}
           </ul>
         ) : (
-          <p className="text-paper-raised">No learning tips for this analysis.</p>
+          <p className="text-ink">No learning tips for this analysis.</p>
         )
       ) : (
-        <p className="text-paper-raised/50 italic">Not available for this analysis.</p>
+        <p className="text-ink-soft italic">Not available for this analysis.</p>
       )}
     </AIInsightCard>
   )

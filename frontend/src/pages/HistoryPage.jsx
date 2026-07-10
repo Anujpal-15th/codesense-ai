@@ -13,7 +13,7 @@ function HistoryPage() {
   }, [fetchHistory])
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-6">
+    <div className="mx-auto h-full max-w-4xl space-y-4 overflow-y-auto p-6">
       <h1 className="text-xl font-extrabold text-ink">History</h1>
 
       {isLoading && <p className="text-ink-soft">Loading...</p>}

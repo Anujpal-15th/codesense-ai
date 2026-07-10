@@ -9,23 +9,27 @@ const navLinkClass = ({ isActive }) =>
 
 function AppShell() {
   return (
-    <div className="min-h-screen bg-paper text-ink">
-      <nav className="border-b border-line px-6 py-4">
-        <div className="mx-auto flex max-w-6xl items-center gap-6">
+    <div className="flex h-screen flex-col bg-paper text-ink">
+      <nav className="shrink-0 border-b border-line bg-paper-raised px-6 py-3">
+        <div className="mx-auto flex max-w-[1800px] items-center justify-between">
           <NavLink to="/" className="flex items-center gap-2 font-mono text-lg font-bold">
             <span className="h-2 w-2 rounded-full bg-approve" />
             codesense <span className="font-normal text-ink-soft">.ai</span>
           </NavLink>
-          <NavLink to="/analyze" className={navLinkClass}>
-            Workspace
-          </NavLink>
-          <NavLink to="/history" className={navLinkClass}>
-            History
-          </NavLink>
+          <div className="flex items-center gap-2">
+            <NavLink to="/analyze" className={navLinkClass}>
+              Workspace
+            </NavLink>
+            <NavLink to="/history" className={navLinkClass}>
+              History
+            </NavLink>
+          </div>
         </div>
       </nav>
 
-      <Outlet />
+      <main className="min-h-0 flex-1">
+        <Outlet />
+      </main>
     </div>
   )
 }
@@ -34,8 +38,9 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      {/* Workspace is a full-viewport LeetCode-style layout with its own top bar. */}
+      <Route path="/analyze" element={<WorkspacePage />} />
       <Route element={<AppShell />}>
-        <Route path="/analyze" element={<WorkspacePage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/history/:id" element={<AnalysisDetailPage />} />
       </Route>

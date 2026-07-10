@@ -1,14 +1,16 @@
 @import "tailwindcss";
 
 @theme {
-  --color-paper: #F4F5F7;
+  --color-paper: #F8F9FA;
   --color-paper-raised: #FFFFFF;
-  --color-ink: #14171F;
-  --color-ink-soft: #4A4F5E;
-  --color-line: #E2E4EA;
+  --color-ink: #111827;
+  --color-ink-soft: #6B7280;
+  --color-line: #E5E7EB;
   --color-approve: #0F7A5C;
   --color-correct: #C4432B;
   --color-highlight-ink: #A9781B;
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
 
   --font-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
