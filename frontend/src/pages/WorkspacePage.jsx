@@ -192,54 +192,56 @@ function WorkspacePage() {
 
   return (
     <div className="flex h-screen flex-col bg-paper text-ink">
-      {/* TOP BAR: logo left · action buttons centered · nav right */}
-      <header className="grid shrink-0 grid-cols-3 items-center border-b border-line bg-paper-raised px-4 py-2">
-        <NavLink to="/" className="flex items-center gap-2 justify-self-start font-mono text-lg font-bold">
+      {/* TOP BAR: logo left · action buttons + nav grouped right (LeetCode-style) */}
+      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-paper-raised px-4 py-2">
+        <NavLink to="/" className="flex items-center gap-2 font-mono text-lg font-bold">
           <span className="h-2 w-2 rounded-full bg-approve" />
           codesense <span className="font-normal text-ink-soft">.ai</span>
         </NavLink>
 
-        <div className="flex items-center gap-2 justify-self-center">
-          <button
-            type="button"
-            onClick={handleRun}
-            disabled={isExecuting}
-            title="Run — execute and see output (Ctrl+Enter)"
-            className="inline-flex items-center gap-2 rounded-lg border border-line bg-paper-raised px-4 py-2 font-mono text-sm font-semibold text-ink hover:border-ink disabled:opacity-50"
-          >
-            {pendingAction === 'run' && isExecuting && <Spinner />}
-            {pendingAction === 'run' && isExecuting ? 'Running…' : 'Run'}
-          </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={isAnalyzing}
-            title="Submit — analyze pattern & complexity"
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-mono text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-50"
-          >
-            {isAnalyzing && <Spinner />}
-            {isAnalyzing ? 'Analyzing…' : 'Submit'}
-          </button>
-          <button
-            type="button"
-            onClick={handleVisualize}
-            disabled={isExecuting}
-            title="Visualize — step through execution"
-            className="inline-flex items-center gap-2 rounded-lg border border-line bg-paper-raised px-4 py-2 font-mono text-sm font-semibold text-ink hover:border-ink disabled:opacity-50"
-          >
-            {pendingAction === 'visualize' && isExecuting && <Spinner />}
-            {pendingAction === 'visualize' && isExecuting ? 'Running…' : 'Visualize'}
-          </button>
-        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRun}
+              disabled={isExecuting}
+              title="Run — execute and see output (Ctrl+Enter)"
+              className="inline-flex items-center gap-2 rounded-lg border border-line bg-paper-raised px-4 py-2 font-mono text-sm font-semibold text-ink hover:border-ink disabled:opacity-50"
+            >
+              {pendingAction === 'run' && isExecuting && <Spinner />}
+              {pendingAction === 'run' && isExecuting ? 'Running…' : 'Run'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={isAnalyzing}
+              title="Submit — analyze pattern & complexity"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-mono text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-50"
+            >
+              {isAnalyzing && <Spinner />}
+              {isAnalyzing ? 'Analyzing…' : 'Submit'}
+            </button>
+            <button
+              type="button"
+              onClick={handleVisualize}
+              disabled={isExecuting}
+              title="Visualize — step through execution"
+              className="inline-flex items-center gap-2 rounded-lg border border-line bg-paper-raised px-4 py-2 font-mono text-sm font-semibold text-ink hover:border-ink disabled:opacity-50"
+            >
+              {pendingAction === 'visualize' && isExecuting && <Spinner />}
+              {pendingAction === 'visualize' && isExecuting ? 'Running…' : 'Visualize'}
+            </button>
+          </div>
 
-        <nav className="flex items-center gap-1 justify-self-end">
-          <NavLink to="/analyze" className={navLinkClass}>
-            Workspace
-          </NavLink>
-          <NavLink to="/history" className={navLinkClass}>
-            History
-          </NavLink>
-        </nav>
+          <nav className="flex items-center gap-1 border-l border-line pl-3">
+            <NavLink to="/analyze" className={navLinkClass}>
+              Workspace
+            </NavLink>
+            <NavLink to="/history" className={navLinkClass}>
+              History
+            </NavLink>
+          </nav>
+        </div>
       </header>
 
       {/* SPLIT: results (left) | draggable divider | editor (right) */}
@@ -250,7 +252,7 @@ function WorkspacePage() {
         {/* LEFT — results/analysis panel with tabs */}
         <section
           style={leftStyle}
-          className="flex min-h-0 flex-col border-b border-line lg:h-full lg:border-b-0 lg:border-r"
+          className="flex min-h-0 min-w-0 flex-col border-b border-line lg:h-full lg:border-b-0 lg:border-r"
         >
           <div className="flex shrink-0 gap-1 border-b border-line bg-paper-raised px-3">
             {TABS.map((tab) => (
@@ -320,8 +322,10 @@ function WorkspacePage() {
           aria-orientation="vertical"
         />
 
-        {/* RIGHT — code editor */}
-        <section className="flex min-h-0 flex-1 flex-col">
+        {/* RIGHT — code editor. min-w-0 lets this flex child shrink below its
+            content width so dragging the divider resizes BOTH panels (without
+            it, Monaco's intrinsic width blocks the left panel from growing). */}
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
           <EditorToolbar
             onFormat={handleFormat}
             onClear={handleClear}

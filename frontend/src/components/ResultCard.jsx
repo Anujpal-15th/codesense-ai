@@ -1,5 +1,6 @@
 import AIInsightCard from './AIInsightCard'
 import BugsEdgeCasesCard from './analysis/BugsEdgeCasesCard'
+import ComplexityGraph from './analysis/ComplexityGraph'
 import LearningTipsCard from './analysis/LearningTipsCard'
 import ScoreCard from './analysis/ScoreCard'
 import { ratingTone } from './ratingTone'
@@ -57,6 +58,10 @@ function ResultCard({ analysis }) {
           <span className={`rounded-md px-3 py-1.5 font-mono text-sm font-bold uppercase ${verdictClass}`}>
             {analysis.isOptimal ? 'Optimal' : 'Not optimal'}
           </span>
+        </div>
+
+        <div className="mt-4">
+          <ComplexityGraph complexity={analysis.timeComplexity} isOptimal={analysis.isOptimal} />
         </div>
 
         <p className="mt-4 leading-relaxed text-ink-soft">{analysis.explanation}</p>
