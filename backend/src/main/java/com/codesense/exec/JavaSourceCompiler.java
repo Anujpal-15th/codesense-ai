@@ -93,6 +93,11 @@ class JavaSourceCompiler {
             // the debuggee) doesn't need this.
             if (workDir.getFileSystem().supportedFileAttributeViews().contains("posix")) {
                 try {
+                    // Widen from 700 to 755 so the non-root 'sandbox' user inside
+                    // the Docker container (DockerSandboxRunner) can traverse and
+                    // read the compiled .class files. Without this, JDI attach fails
+                    // with ClassNotFoundException even though the files exist on the
+                    // host filesystem - a different-OS-user permission gap.
                     Files.setPosixFilePermissions(workDir, PosixFilePermissions.fromString("rwxr-xr-x"));
                 } catch (IOException e) {
                     throw new ExecutionFailedException("Failed to set compile work dir permissions", e);
