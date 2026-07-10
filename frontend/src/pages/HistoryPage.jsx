@@ -18,7 +18,21 @@ function HistoryPage() {
 
       {isLoading && <p className="text-ink-soft">Loading...</p>}
       {error && <p className="text-correct">{error}</p>}
-      {!isLoading && !error && history.length === 0 && <p className="text-ink-soft">No analyses yet.</p>}
+      {!isLoading && !error && history.length === 0 && (
+        <div className="rounded-lg border border-dashed border-line bg-paper-raised p-10 text-center">
+          <p className="font-mono text-sm font-semibold text-ink">No analyses yet</p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-ink-soft">
+            Run your first analysis in the Workspace — paste a function and CodeSense will name the pattern and
+            estimate its complexity. Your results show up here.
+          </p>
+          <Link
+            to="/analyze"
+            className="mt-6 inline-block rounded-full bg-ink px-5 py-2.5 font-mono text-sm font-semibold text-paper-raised"
+          >
+            Go to Workspace →
+          </Link>
+        </div>
+      )}
 
       <ul className="space-y-2">
         {history.map((analysis) => (

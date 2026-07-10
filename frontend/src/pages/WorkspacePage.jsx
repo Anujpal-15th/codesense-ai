@@ -22,7 +22,10 @@ function WorkspacePage() {
   const [code, setCode] = useState(DEFAULT_CODE)
   const [hasEdited, setHasEdited] = useState(false)
   const [theme, setTheme] = useState('vs')
+  const [copied, setCopied] = useState(false)
   const editorApiRef = useRef(null)
+  const copiedTimerRef = useRef(null)
+  const visualizeRef = useRef(null)
 
   const analysisSubmit = useAnalysisStore((state) => state.submit)
   const trace = useExecutionStore((state) => state.trace)
@@ -50,7 +53,7 @@ function WorkspacePage() {
   }, [code, hasEdited, analysisSubmit])
 
   const handleVisualize = () => {
-    if (!code.trim()) return
+    if (!code.trim() || isVisualizing) return
     executionSubmit(code)
       .then((response) => {
         setHasEdited(true)
@@ -58,6 +61,22 @@ function WorkspacePage() {
       })
       .catch(() => {})
   }
+
+  // Keep a ref to the latest handler so the window-level Ctrl/Cmd+Enter
+  // listener (registered once) always calls the current closure, not a stale
+  // one capturing the initial `code`.
+  visualizeRef.current = handleVisualize
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault()
+        visualizeRef.current?.()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const handleEditorMount = (editor, monaco) => {
     editorApiRef.current = { editor, monaco }
@@ -72,31 +91,48 @@ function WorkspacePage() {
   const handleExample = () => handleCodeChange(reconstructExamplePlainText())
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(code).catch(() => {})
+    navigator.clipboard
+      .writeText(code)
+      .then(() => {
+        setCopied(true)
+        clearTimeout(copiedTimerRef.current)
+        copiedTimerRef.current = setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
   }
+
+  useEffect(() => () => clearTimeout(copiedTimerRef.current), [])
 
   return (
     <div className="mx-auto max-w-[1800px] space-y-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-xl font-extrabold text-ink">Workspace</h1>
         <div className="flex items-center gap-3">
-          {trace && (
+          {isLocked ? (
             <button
               type="button"
               onClick={resetExecution}
-              className="rounded-full border border-line px-4 py-2 font-mono text-sm font-semibold text-ink"
+              className="rounded-full border border-line bg-paper-raised px-5 py-2 font-mono text-sm font-semibold text-ink hover:border-ink"
             >
-              Edit Code
+              ← Edit Code
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleVisualize}
+              disabled={isVisualizing}
+              title="Run & Visualize (Ctrl+Enter)"
+              className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2 font-mono text-sm font-semibold text-paper-raised disabled:opacity-50"
+            >
+              {isVisualizing && (
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              )}
+              {isVisualizing ? 'Running…' : 'Run & Visualize'}
             </button>
           )}
-          <button
-            type="button"
-            onClick={handleVisualize}
-            disabled={isVisualizing}
-            className="rounded-full bg-ink px-5 py-2 font-mono text-sm font-semibold text-paper-raised disabled:opacity-50"
-          >
-            {isVisualizing ? 'Running…' : 'Run & Visualize'}
-          </button>
         </div>
       </div>
 
@@ -128,6 +164,7 @@ function WorkspacePage() {
             onClear={handleClear}
             onExample={handleExample}
             onCopy={handleCopy}
+            copied={copied}
             disabled={isLocked}
           />
           {wasWrapped && (
