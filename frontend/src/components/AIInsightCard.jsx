@@ -1,6 +1,6 @@
 function AIInsightCard({ icon, title, chart, children }) {
   return (
-    <div className="relative space-y-3 overflow-hidden rounded-lg border border-line bg-paper-raised p-5 text-ink">
+    <div className="relative space-y-3 overflow-hidden rounded-[15px] border border-line bg-paper-raised p-5 text-ink">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-2">
           <span className="text-ink-soft">{icon}</span>

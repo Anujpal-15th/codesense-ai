@@ -18,12 +18,12 @@ function ConsoleOutputPanel() {
   const output = trace.consoleOutput ?? ''
 
   return (
-    <div className="rounded-lg border border-line bg-paper-raised p-4">
+    <div className="rounded-[15px] border border-line bg-paper-raised p-4">
       <h2 className="mb-3 font-mono text-xs font-semibold tracking-widest text-ink-soft uppercase">
         Console Output
       </h2>
       {output ? (
-        <pre className="max-h-72 overflow-auto rounded-lg bg-paper p-3 font-mono text-sm whitespace-pre-wrap text-ink">
+        <pre className="max-h-72 overflow-auto rounded-[15px] bg-paper p-3 font-mono text-sm whitespace-pre-wrap text-ink">
           {output}
         </pre>
       ) : (

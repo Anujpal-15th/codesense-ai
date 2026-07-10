@@ -206,7 +206,7 @@ function WorkspacePage() {
               onClick={handleRun}
               disabled={isExecuting}
               title="Run — execute and see output (Ctrl+Enter)"
-              className="inline-flex items-center gap-2 rounded-lg border border-line bg-paper-raised px-4 py-2 font-mono text-sm font-semibold text-ink hover:border-ink disabled:opacity-50"
+              className="uiverse-button-outline inline-flex items-center gap-2 font-mono text-sm font-semibold disabled:opacity-50"
             >
               {pendingAction === 'run' && isExecuting && <Spinner />}
               {pendingAction === 'run' && isExecuting ? 'Running…' : 'Run'}
@@ -216,7 +216,7 @@ function WorkspacePage() {
               onClick={handleSubmit}
               disabled={isAnalyzing}
               title="Submit — analyze pattern & complexity"
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 font-mono text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-50"
+              className="uiverse-button-filled inline-flex items-center gap-2 font-mono text-sm font-semibold disabled:opacity-50"
             >
               {isAnalyzing && <Spinner />}
               {isAnalyzing ? 'Analyzing…' : 'Submit'}
@@ -226,7 +226,7 @@ function WorkspacePage() {
               onClick={handleVisualize}
               disabled={isExecuting}
               title="Visualize — step through execution"
-              className="inline-flex items-center gap-2 rounded-lg border border-line bg-paper-raised px-4 py-2 font-mono text-sm font-semibold text-ink hover:border-ink disabled:opacity-50"
+              className="uiverse-button-outline inline-flex items-center gap-2 font-mono text-sm font-semibold disabled:opacity-50"
             >
               {pendingAction === 'visualize' && isExecuting && <Spinner />}
               {pendingAction === 'visualize' && isExecuting ? 'Running…' : 'Visualize'}
@@ -252,9 +252,9 @@ function WorkspacePage() {
         {/* LEFT — results/analysis panel with tabs */}
         <section
           style={leftStyle}
-          className="flex min-h-0 min-w-0 flex-col rounded-lg border-b border-line lg:h-full lg:border-b-0 lg:border-r"
+          className="flex min-h-0 min-w-0 flex-col rounded-[15px] border-b border-line lg:h-full lg:border-b-0 lg:border-r"
         >
-          <div className="flex shrink-0 gap-1 border-b border-line bg-paper-raised px-3">
+          <div className="flex shrink-0 gap-1 rounded-t-[15px] border-b border-line bg-paper-raised px-3">
             {TABS.map((tab) => (
               <button
                 key={tab.id}
@@ -325,7 +325,7 @@ function WorkspacePage() {
         {/* RIGHT — code editor. min-w-0 lets this flex child shrink below its
             content width so dragging the divider resizes BOTH panels (without
             it, Monaco's intrinsic width blocks the left panel from growing). */}
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col rounded-lg">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col rounded-[15px]">
           <EditorToolbar
             onFormat={handleFormat}
             onClear={handleClear}

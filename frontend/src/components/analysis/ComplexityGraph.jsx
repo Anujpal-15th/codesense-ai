@@ -49,7 +49,7 @@ function ComplexityGraph({ complexity, isOptimal }) {
   const activeCurve = CURVES.find((c) => c.key === active)
 
   return (
-    <div className="rounded-lg border border-line bg-paper p-3">
+    <div className="rounded-[15px] border border-line bg-paper p-3">
       <svg viewBox="0 0 264 120" className="h-[120px] w-full" preserveAspectRatio="none">
         {/* baseline axis */}
         <line

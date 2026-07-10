@@ -47,7 +47,7 @@ function ResultCard({ analysis }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-line bg-paper-raised p-6">
+      <div className="rounded-[15px] border border-line bg-paper-raised p-6">
         {/* Pattern name is the hero element. */}
         <h2 className="font-mono text-2xl font-bold tracking-tight text-ink sm:text-3xl">{analysis.pattern}</h2>
 

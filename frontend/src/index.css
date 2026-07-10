@@ -53,3 +53,52 @@
     linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
   background-size: 40px 40px;
 }
+
+/* UIverse button styles: outline and filled variants with lift effect */
+.uiverse-button-outline {
+  background-color: transparent;
+  border: 0.125em solid #1A1A1A;
+  border-radius: 0.9375em;
+  color: #3B3B3B;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.6em 1.5em;
+  transition: all 300ms cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: transform;
+}
+
+.uiverse-button-outline:hover:not(:disabled) {
+  color: #fff;
+  background-color: #1A1A1A;
+  box-shadow: rgba(0, 0, 0, 0.25) 0 8px 15px;
+  transform: translateY(-2px);
+}
+
+.uiverse-button-outline:active:not(:disabled) {
+  box-shadow: none;
+  transform: translateY(0);
+}
+
+.uiverse-button-filled {
+  background-color: #1A1A1A;
+  border: 0.125em solid #1A1A1A;
+  border-radius: 0.9375em;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.6em 1.5em;
+  transition: all 300ms cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: transform;
+}
+
+.uiverse-button-filled:hover:not(:disabled) {
+  background-color: #333333;
+  border-color: #333333;
+  box-shadow: rgba(0, 0, 0, 0.25) 0 8px 15px;
+  transform: translateY(-2px);
+}
+
+.uiverse-button-filled:active:not(:disabled) {
+  box-shadow: none;
+  transform: translateY(0);
+}
