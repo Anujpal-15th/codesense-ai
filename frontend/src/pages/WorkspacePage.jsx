@@ -18,9 +18,9 @@ import { useExecutionStore } from '../store/executionStore'
 const DEFAULT_CODE = `public class Main {\n    public static void main(String[] args) {\n        \n    }\n}\n`
 
 const TABS = [
-  { id: 'result', label: 'Result' },
   { id: 'analysis', label: 'Analysis' },
   { id: 'visualize', label: 'Visualize' },
+  { id: 'result', label: 'Result' },
 ]
 
 const navLinkClass = ({ isActive }) =>
@@ -252,7 +252,7 @@ function WorkspacePage() {
         {/* LEFT — results/analysis panel with tabs */}
         <section
           style={leftStyle}
-          className="flex min-h-0 min-w-0 flex-col border-b border-line lg:h-full lg:border-b-0 lg:border-r"
+          className="flex min-h-0 min-w-0 flex-col rounded-lg border-b border-line lg:h-full lg:border-b-0 lg:border-r"
         >
           <div className="flex shrink-0 gap-1 border-b border-line bg-paper-raised px-3">
             {TABS.map((tab) => (
@@ -271,7 +271,7 @@ function WorkspacePage() {
             ))}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-lg p-4">
             {executionError && activeTab !== 'analysis' && (
               <p className="mb-4 rounded-lg border border-correct/30 bg-correct/10 p-3 text-sm text-correct">
                 {executionError}
@@ -325,7 +325,7 @@ function WorkspacePage() {
         {/* RIGHT — code editor. min-w-0 lets this flex child shrink below its
             content width so dragging the divider resizes BOTH panels (without
             it, Monaco's intrinsic width blocks the left panel from growing). */}
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col rounded-lg">
           <EditorToolbar
             onFormat={handleFormat}
             onClear={handleClear}
