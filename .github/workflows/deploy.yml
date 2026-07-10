@@ -1,0 +1,85 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # Fast-fail gate: catches a broken compile before we ever touch the
+      # Azure VM. The deploy job below rebuilds again on the VM itself
+      # (it's what systemd actually runs), so this is deliberately redundant
+      # with that step, not a replacement for it.
+      - name: Build backend
+        working-directory: backend
+        run: mvn package -DskipTests
+
+  deploy:
+    name: Deploy to Azure VM
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.AZURE_HOST }}
+          username: ${{ secrets.AZURE_USER }}
+          key: ${{ secrets.AZURE_SSH_KEY }}
+          command_timeout: 15m
+          # Stop on the first failing command (equivalent to `set -e`) so a
+          # broken `git pull`/`mvn package` on the VM can't silently fall
+          # through to restarting the service on a stale or half-built jar.
+          script_stop: true
+          script: |
+            cd /home/azureuser/codesense-ai
+            git pull origin main
+            cd backend && mvn clean package -DskipTests -q
+            sudo systemctl restart codesense
+            sleep 25
+            # -o /dev/null: this endpoint returns the full unscoped analysis
+            # history (see CLAUDE.md's known pre-launch item) - discard the
+            # body so other users' submitted code doesn't end up in CI logs.
+            curl -sf -o /dev/null http://localhost:8080/api/analyses || exit 1
+
+  smoke-test:
+    name: Smoke test (analysis regression suite)
+    needs: deploy
+    runs-on: ubuntu-latest
+    # A flaky LLM response shouldn't turn a successful deploy red - this job
+    # reports results but never blocks or fails the overall pipeline.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Run analysis regression suite against production
+        env:
+          BASE_URL: http://${{ secrets.AZURE_HOST }}:8080
+        run: |
+          node regression-suite.mjs --only analysis | tee regression-output.txt
+
+      - name: Publish summary
+        if: always()
+        run: |
+          {
+            echo "### Analysis regression suite"
+            echo '```'
+            cat regression-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

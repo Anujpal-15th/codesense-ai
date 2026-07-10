@@ -1,5 +1,7 @@
 # CodeSense AI
 
+[![Deploy](https://github.com/Anujpal-15th/codesense-ai/actions/workflows/deploy.yml/badge.svg)](https://github.com/Anujpal-15th/codesense-ai/actions/workflows/deploy.yml)
+
 CodeSense AI is a tool for analyzing data structures & algorithms code: paste a
 snippet, and it identifies the underlying pattern, estimates time/space
 complexity, and reports whether the approach is optimal. It's aimed at
