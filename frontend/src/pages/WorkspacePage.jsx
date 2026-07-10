@@ -252,7 +252,7 @@ function WorkspacePage() {
         {/* LEFT — results/analysis panel with tabs */}
         <section
           style={leftStyle}
-          className="flex min-h-0 min-w-0 flex-col rounded-[15px] border-b border-line bg-paper-raised lg:h-full lg:border-b-0 lg:border-r"
+          className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[15px] border-b border-line bg-paper-raised lg:h-full lg:border-b-0 lg:border-r"
         >
           <div className="flex shrink-0 gap-1 rounded-t-[15px] border-b border-line bg-paper-raised px-4">
             {TABS.map((tab) => (
@@ -325,7 +325,7 @@ function WorkspacePage() {
         {/* RIGHT — code editor. min-w-0 lets this flex child shrink below its
             content width so dragging the divider resizes BOTH panels (without
             it, Monaco's intrinsic width blocks the left panel from growing). */}
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col rounded-[15px]">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[15px]">
           <EditorToolbar
             onFormat={handleFormat}
             onClear={handleClear}
