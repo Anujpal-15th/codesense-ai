@@ -38,20 +38,10 @@ jobs:
           username: ${{ secrets.AZURE_USER }}
           key: ${{ secrets.AZURE_SSH_KEY }}
           command_timeout: 15m
-          # Stop on the first failing command (equivalent to `set -e`) so a
-          # broken `git pull`/`mvn package` on the VM can't silently fall
-          # through to restarting the service on a stale or half-built jar.
-          script_stop: true
-          script: |
-            cd /home/azureuser/codesense-ai
-            git pull origin main
-            cd backend && mvn clean package -DskipTests -q
-            sudo systemctl restart codesense
-            sleep 25
-            # -o /dev/null: this endpoint returns the full unscoped analysis
-            # history (see CLAUDE.md's known pre-launch item) - discard the
-            # body so other users' submitted code doesn't end up in CI logs.
-            curl -sf -o /dev/null http://localhost:8080/api/analyses || exit 1
+          # Commands chained with && to ensure fail-fast: a broken git pull,
+          # mvn package, or systemd restart will abort here and never restart
+          # the service on a stale or half-built jar.
+          script: cd /home/azureuser/codesense-ai && git pull origin main && cd backend && mvn clean package -DskipTests -q && sudo systemctl restart codesense && sleep 25 && curl -f -o /dev/null http://localhost:8080/api/analyses
 
   smoke-test:
     name: Smoke test (analysis regression suite)
