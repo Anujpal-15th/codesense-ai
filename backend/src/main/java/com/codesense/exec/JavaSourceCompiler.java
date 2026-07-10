@@ -15,6 +15,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -78,6 +79,26 @@ class JavaSourceCompiler {
         // leak a directory per request. Successful compiles hand ownership
         // of the dir to the caller, who cleans it up after the trace.
         try {
+            // Files.createTempDirectory defaults to mode 700 on POSIX
+            // filesystems. The docker sandbox mode bind-mounts this dir
+            // read-only into a container that runs as a different, non-root
+            // user (DockerSandboxRunner -v .../:/work:ro, Dockerfile's USER
+            // sandbox) - a 700 dir owned by the host process user is
+            // unreadable to that container user, which surfaces as a
+            // ClassNotFoundException at trace time, not a compile error.
+            // Widen to 755 so the sandbox user can read (but not write) it.
+            // Guarded on POSIX support so this stays a no-op on Windows dev,
+            // where NTFS doesn't have a "posix" FileAttributeView and
+            // local-process mode (same OS user runs both the compiler and
+            // the debuggee) doesn't need this.
+            if (workDir.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+                try {
+                    Files.setPosixFilePermissions(workDir, PosixFilePermissions.fromString("rwxr-xr-x"));
+                } catch (IOException e) {
+                    throw new ExecutionFailedException("Failed to set compile work dir permissions", e);
+                }
+            }
+
             Path sourceFile = workDir.resolve(mainClassName + ".java");
             try {
                 Files.writeString(sourceFile, sourceCode);
