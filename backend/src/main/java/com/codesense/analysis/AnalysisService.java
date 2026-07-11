@@ -106,6 +106,15 @@ public class AnalysisService {
                 .toList();
     }
 
+    /**
+     * Lightweight history list for the list view - see
+     * {@link AnalysisRepository#findAllSummaries()}. The full record is fetched
+     * per-row via {@link #getById(Long)} when a card is opened.
+     */
+    public List<AnalysisSummaryResponse> getHistorySummaries() {
+        return analysisRepository.findAllSummaries();
+    }
+
     public AnalysisResponse getById(Long id) {
         Analysis analysis = analysisRepository.findById(id)
                 .orElseThrow(() -> new AnalysisNotFoundException(id));

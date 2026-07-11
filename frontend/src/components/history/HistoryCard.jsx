@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom'
 
-// First 2-3 non-blank lines of the submitted snippet, for an at-a-glance
-// preview. Normalizes CRLF first - Monaco (and this DB's stored snippets)
-// use \r\n, and splitting on \n alone would leave a trailing \r on every line.
-function codePreview(snippet) {
-  if (!snippet) return []
-  return snippet
+// First 3 non-blank lines of the code for an at-a-glance preview. The summary
+// endpoint sends a pre-truncated `codePreview`; fall back to `codeSnippet` in
+// case a full record is ever passed. Normalizes CRLF first — Monaco (and this
+// DB's stored snippets) use \r\n, which would otherwise leave a trailing \r.
+function previewLines(analysis) {
+  const source = analysis.codePreview ?? analysis.codeSnippet
+  if (!source) return []
+  return source
     .replace(/\r\n/g, '\n')
     .split('\n')
     .filter((line) => line.trim().length > 0)
@@ -43,7 +45,8 @@ function OptimalBadge({ isOptimal }) {
 }
 
 function HistoryCard({ analysis }) {
-  const preview = codePreview(analysis.codeSnippet)
+  const preview = previewLines(analysis)
+  const excerpt = analysis.explanationExcerpt ?? analysis.explanation
 
   return (
     <Link
@@ -72,6 +75,8 @@ function HistoryCard({ analysis }) {
           ))}
         </pre>
       )}
+
+      {excerpt && <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-ink-soft">{excerpt}</p>}
     </Link>
   )
 }

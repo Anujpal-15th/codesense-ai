@@ -31,6 +31,16 @@ public class AnalysisController {
         return analysisService.getHistory();
     }
 
+    /**
+     * Lightweight list view. Declared before the {@code /{id}} mapping for
+     * clarity - Spring matches the literal {@code /summary} segment ahead of the
+     * {@code /{id}} path variable regardless, so there's no clash.
+     */
+    @GetMapping("/summary")
+    public List<AnalysisSummaryResponse> summary() {
+        return analysisService.getHistorySummaries();
+    }
+
     @GetMapping("/{id}")
     public AnalysisResponse getById(@PathVariable Long id) {
         return analysisService.getById(id);

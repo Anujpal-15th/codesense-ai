@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { getAnalysisById, getHistory, submitAnalysis } from '../api/analysisApi'
+import { getAnalysisById, getHistorySummaries, submitAnalysis } from '../api/analysisApi'
 
 function extractErrorMessage(error) {
   return error.response?.data?.error ?? error.message ?? 'Something went wrong'
@@ -26,7 +26,7 @@ export const useAnalysisStore = create((set) => ({
   fetchHistory: async () => {
     set({ isLoading: true, error: null })
     try {
-      const history = await getHistory()
+      const history = await getHistorySummaries()
       set({ history, isLoading: false })
     } catch (error) {
       set({ error: extractErrorMessage(error), isLoading: false })
