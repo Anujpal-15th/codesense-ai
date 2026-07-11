@@ -54,6 +54,30 @@
   background-size: 40px 40px;
 }
 
+/* Draw-in for the landing hero's complexity curve. Paired with pathLength="1"
+   on the path so the dash math is curve-independent, and replayed via a keyed
+   remount each time the demo switches examples. */
+@keyframes landing-chart-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.landing-chart-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: landing-chart-draw 0.9s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-chart-draw {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
 /* UIverse button styles: outline and filled variants with lift effect */
 .uiverse-button-outline {
   background-color: transparent;

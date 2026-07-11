@@ -1,9 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import CodeBlock from '../components/landing/CodeBlock'
 import { EXAMPLES } from '../components/landing/examples'
 import MiniChart from '../components/landing/MiniChart'
 import PatternCard from '../components/landing/PatternCard'
+
+const STATS = [
+  { value: '8+', label: 'DSA patterns recognized' },
+  { value: 'Time + Space', label: 'Complexity, measured' },
+  { value: 'Optimal?', label: 'A straight verdict' },
+  { value: 'Step-through', label: 'Live execution visualizer' },
+]
 
 const PATTERNS = [
   { name: 'Sliding Window', complexity: 'O(n) time · O(1) space', rising: true },
@@ -18,11 +25,11 @@ const STEPS = [
   {
     label: '01 — INPUT',
     title: 'Paste your function',
-    body: 'Java, Python, or JavaScript. No project setup, no config — just the snippet you’re stuck on.',
+    body: 'Java and Python code, No project setup, no config — just the snippet you’re stuck on.',
   },
   {
     label: '02 — ANALYZE',
-    title: 'Claude reads the logic',
+    title: 'CodeSense reads the logic',
     body: 'It matches your approach against known interview patterns and works out how it actually scales.',
   },
   {
@@ -43,10 +50,26 @@ function Eyebrow({ children }) {
 
 function LandingPage() {
   const [activeIndex, setActiveIndex] = useState(0)
+  const [autoPlay, setAutoPlay] = useState(true)
+  const [hovering, setHovering] = useState(false)
   const active = EXAMPLES[activeIndex]
   const verdictColor = active.isOptimal ? 'text-approve' : 'text-correct'
   const badgeClass = active.isOptimal ? 'bg-approve/10 text-approve' : 'bg-correct/10 text-correct'
   const chartColor = active.isOptimal ? 'var(--color-approve)' : 'var(--color-correct)'
+
+  // The hero demo cycles through the examples on its own so a first-time
+  // visitor sees the tool "working" without touching anything. It pauses while
+  // hovered (so they can read) and stops for good once they pick a tab.
+  useEffect(() => {
+    if (!autoPlay || hovering) return undefined
+    const id = setInterval(() => setActiveIndex((i) => (i + 1) % EXAMPLES.length), 3800)
+    return () => clearInterval(id)
+  }, [autoPlay, hovering])
+
+  const selectExample = (i) => {
+    setActiveIndex(i)
+    setAutoPlay(false)
+  }
 
   return (
     <div className="landing-grid-bg min-h-screen font-sans text-ink">
@@ -86,10 +109,34 @@ function LandingPage() {
           straight whether it&rsquo;s the optimal approach &mdash; before an interviewer does.
         </p>
 
-        <div className="mt-12 grid grid-cols-1 overflow-hidden rounded-2xl border border-line bg-paper-raised shadow-[0_1px_2px_rgba(0,0,0,0.04)] md:grid-cols-2">
+        <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+          <Link
+            to="/analyze"
+            className="rounded-full bg-approve px-7 py-3.5 font-mono text-sm font-bold text-white shadow-[0_10px_24px_rgba(15,122,92,0.28)] transition-transform hover:-translate-y-0.5"
+          >
+            Analyze your code &rarr;
+          </Link>
+          <a href="#how-it-works" className="font-mono text-sm font-semibold text-ink-soft hover:text-ink">
+            See how it works &darr;
+          </a>
+        </div>
+
+        <div
+          className="mt-12 grid grid-cols-1 overflow-hidden rounded-2xl border border-line bg-paper-raised shadow-[0_1px_2px_rgba(0,0,0,0.04)] md:grid-cols-2"
+          onMouseEnter={() => setHovering(true)}
+          onMouseLeave={() => setHovering(false)}
+        >
           <div className="border-b border-line p-6 md:border-r md:border-b-0">
             <div className="mb-4 flex items-center justify-between font-mono text-xs font-semibold tracking-widest text-ink-soft uppercase">
-              <span>Your code</span>
+              <span className="flex items-center gap-2">
+                {autoPlay && (
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-approve opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-approve" />
+                  </span>
+                )}
+                {autoPlay ? 'Live demo' : 'Your code'}
+              </span>
               <span>Java</span>
             </div>
             <div className="mb-4 flex flex-wrap gap-2">
@@ -97,7 +144,7 @@ function LandingPage() {
                 <button
                   key={example.id}
                   type="button"
-                  onClick={() => setActiveIndex(i)}
+                  onClick={() => selectExample(i)}
                   className={`rounded-full px-3 py-1.5 font-mono text-xs uppercase tracking-widest transition-colors ${
                     i === activeIndex
                       ? 'bg-ink font-semibold text-paper-raised'
@@ -124,7 +171,8 @@ function LandingPage() {
             <div className="relative h-28 rounded-lg border border-line bg-paper px-3 py-3">
               <span className="absolute top-2 left-2 font-mono text-[10px] text-ink-soft">t</span>
               <span className="absolute right-2 bottom-2 font-mono text-[10px] text-ink-soft">n</span>
-              <MiniChart d={active.chartPath} color={chartColor} />
+              {/* key remounts the chart on each example so the draw-in replays. */}
+              <MiniChart key={activeIndex} d={active.chartPath} color={chartColor} animated />
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-line p-3">
@@ -138,6 +186,15 @@ function LandingPage() {
             </div>
             <p className="mt-4 text-sm text-ink-soft">{active.explanation}</p>
           </div>
+        </div>
+
+        <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
+          {STATS.map((stat) => (
+            <div key={stat.label} className="bg-paper-raised px-5 py-6 text-center">
+              <div className="font-mono text-xl font-extrabold text-approve">{stat.value}</div>
+              <div className="mt-1.5 text-xs text-ink-soft">{stat.label}</div>
+            </div>
+          ))}
         </div>
       </section>
 
