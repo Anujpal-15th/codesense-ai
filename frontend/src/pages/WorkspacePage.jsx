@@ -311,9 +311,14 @@ function WorkspacePage() {
                   <OutcomeBanner />
                   <ConsoleOutputPanel />
                 </div>
+              ) : isExecuting ? (
+                <div className="flex items-center gap-3 rounded-lg border border-line bg-paper-raised p-6 text-sm text-ink-soft">
+                  <Spinner />
+                  Running your code…
+                </div>
               ) : (
                 !executionError && (
-                  <EmptyState message="Run your code to see the execution outcome and console output here." />
+                  <EmptyState message="Click Run or Submit to see the execution outcome and console output here." />
                 )
               ))}
 
