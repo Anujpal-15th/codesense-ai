@@ -1,5 +1,6 @@
 package com.codesense.analysis;
 
+import com.codesense.validation.CodeSubmissionValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,8 +30,13 @@ public class AnalysisService {
     private final CustomDataStructureDetector customDataStructureDetector;
     private final PatternEvidenceGuard patternEvidenceGuard;
     private final ComplexityClaimGuard complexityClaimGuard;
+    private final CodeSubmissionValidator submissionValidator;
 
     public AnalysisResponse analyze(String codeSnippet) {
+        // Reject non-Java code and natural-language instructions before the LLM
+        // call (prompt-injection guard). Throws InvalidSubmissionException -> 400.
+        submissionValidator.validate(codeSnippet);
+
         String llmInput = customDataStructureDetector.looksLikeCustomDataStructure(codeSnippet)
                 ? codeSnippet + CUSTOM_DATA_STRUCTURE_HINT
                 : codeSnippet;

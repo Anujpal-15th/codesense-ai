@@ -11,7 +11,26 @@ function ToolbarButton({ onClick, disabled, label }) {
   )
 }
 
-function EditorToolbar({ onFormat, onClear, onExample, onCopy, copied, disabled }) {
+function RefreshIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="15"
+      height="15"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <polyline points="21 3 21 9 15 9" />
+    </svg>
+  )
+}
+
+function EditorToolbar({ onFormat, onRefresh, onExample, onCopy, copied, disabled }) {
   return (
     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-paper-raised px-4 py-2">
       {/* Non-interactive language badge — Java only, no dropdown. */}
@@ -22,7 +41,6 @@ function EditorToolbar({ onFormat, onClear, onExample, onCopy, copied, disabled 
       <div className="flex items-center gap-3">
         <ToolbarButton onClick={onFormat} disabled={disabled} label="Format" />
         <ToolbarButton onClick={onExample} disabled={disabled} label="Example" />
-        <ToolbarButton onClick={onClear} disabled={disabled} label="Clear" />
         <button
           type="button"
           onClick={onCopy}
@@ -31,6 +49,18 @@ function EditorToolbar({ onFormat, onClear, onExample, onCopy, copied, disabled 
           }`}
         >
           {copied ? 'Copied! ✓' : 'Copy'}
+        </button>
+        {/* Refresh resets everything — always enabled, since it's also the way
+            out of the read-only Visualize state. */}
+        <button
+          type="button"
+          onClick={onRefresh}
+          title="Refresh — reset the editor and clear all results"
+          aria-label="Refresh"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-mono text-xs font-semibold text-ink-soft hover:bg-paper hover:text-ink"
+        >
+          <RefreshIcon />
+          Refresh
         </button>
       </div>
     </div>

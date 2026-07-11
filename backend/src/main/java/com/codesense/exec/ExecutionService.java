@@ -1,5 +1,6 @@
 package com.codesense.exec;
 
+import com.codesense.validation.CodeSubmissionValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ public class ExecutionService {
     private final SolutionWrapperGenerator wrapperGenerator;
     private final SandboxRunner sandboxRunner;
     private final JavaTracer tracer;
+    private final CodeSubmissionValidator submissionValidator;
     private final Duration readinessTimeout;
 
     public ExecutionService(JavaSourceCompiler compiler,
@@ -31,6 +33,7 @@ public class ExecutionService {
                              SolutionWrapperGenerator wrapperGenerator,
                              SandboxRunner sandboxRunner,
                              JavaTracer tracer,
+                             CodeSubmissionValidator submissionValidator,
                              @Value("${execution.sandbox.readiness-timeout-seconds}") long readinessTimeoutSeconds) {
         this.compiler = compiler;
         this.entryPointDetector = entryPointDetector;
@@ -38,10 +41,15 @@ public class ExecutionService {
         this.wrapperGenerator = wrapperGenerator;
         this.sandboxRunner = sandboxRunner;
         this.tracer = tracer;
+        this.submissionValidator = submissionValidator;
         this.readinessTimeout = Duration.ofSeconds(readinessTimeoutSeconds);
     }
 
     public ExecutionResponse execute(String sourceCode) {
+        // Reject non-Java code and instruction-only payloads before we compile
+        // and spawn a JVM. Throws InvalidSubmissionException -> 400.
+        submissionValidator.validate(sourceCode);
+
         long tStart = System.nanoTime();
         Optional<String> existingEntryPoint = entryPointDetector.findEntryPointClass(sourceCode);
 

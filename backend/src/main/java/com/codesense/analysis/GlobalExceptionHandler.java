@@ -1,5 +1,6 @@
 package com.codesense.analysis;
 
+import com.codesense.validation.InvalidSubmissionException;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +31,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AnalysisNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(AnalysisNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(ex.getMessage()));
+    }
+
+    /**
+     * Non-Java or instruction-only submissions, rejected before any LLM call or
+     * code execution. Application-wide advice, so this covers both the analysis
+     * and execution controllers. See {@link com.codesense.validation.CodeSubmissionValidator}.
+     */
+    @ExceptionHandler(InvalidSubmissionException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidSubmission(InvalidSubmissionException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ErrorResponse(ex.getMessage()));
     }
 
     /**

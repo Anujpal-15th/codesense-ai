@@ -17,15 +17,6 @@ function SubmitIcon() {
   )
 }
 
-function VisualizeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M2 12 C4 6.5 8.5 4.5 12 4.5 C15.5 4.5 20 6.5 22 12 C20 17.5 15.5 19.5 12 19.5 C8.5 19.5 4 17.5 2 12 Z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  )
-}
-
 function StartRow({ icon, action, description }) {
   return (
     <div className="flex items-center gap-3">
@@ -46,9 +37,16 @@ function WelcomeEmptyState() {
       <p className="mb-8 max-w-xs text-sm text-ink-soft">Write or paste Java code, then pick an action to get started.</p>
       <div className="w-full max-w-xs space-y-5">
         <StartRow icon={<RunIcon />} action="Run" description="to execute your code and see output" />
-        <StartRow icon={<SubmitIcon />} action="Submit" description="to get AI analysis" />
-        <StartRow icon={<VisualizeIcon />} action="Visualize" description="to step through execution" />
+        <StartRow
+          icon={<SubmitIcon />}
+          action="Submit"
+          description="to get AI analysis and a step-through visualization"
+        />
       </div>
+      <p className="mt-6 max-w-xs text-xs text-ink-soft">
+        After Submit, open the <span className="font-semibold text-ink">Visualize</span> tab to step through
+        execution line by line.
+      </p>
     </div>
   )
 }

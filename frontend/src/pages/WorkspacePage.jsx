@@ -12,10 +12,10 @@ import ExecutionNarrative from '../components/visualization/ExecutionNarrative'
 import MemoryView from '../components/visualization/MemoryView'
 import RecursionBadge from '../components/visualization/RecursionBadge'
 import VariablesPanel from '../components/visualization/VariablesPanel'
+import { validateJavaSubmission } from '../lib/codeValidation'
 import { useAnalysisStore } from '../store/analysisStore'
 import { useExecutionStore } from '../store/executionStore'
-
-const DEFAULT_CODE = `public class Main {\n    public static void main(String[] args) {\n        \n    }\n}\n`
+import { useWorkspaceStore } from '../store/workspaceStore'
 
 const TABS = [
   { id: 'analysis', label: 'Analysis' },
@@ -51,16 +51,19 @@ function EmptyState({ message }) {
 }
 
 function WorkspacePage() {
-  const [code, setCode] = useState(DEFAULT_CODE)
+  // Code + view state live in a persisted store so they survive navigation
+  // (Workspace -> History -> back) and reloads. See workspaceStore.
+  const code = useWorkspaceStore((state) => state.code)
+  const setCode = useWorkspaceStore((state) => state.setCode)
+  const activeTab = useWorkspaceStore((state) => state.activeTab)
+  const setActiveTab = useWorkspaceStore((state) => state.setActiveTab)
+  const executedSource = useWorkspaceStore((state) => state.executedSource)
+  const setExecutedSource = useWorkspaceStore((state) => state.setExecutedSource)
+  const resetWorkspace = useWorkspaceStore((state) => state.resetWorkspace)
+
   const [copied, setCopied] = useState(false)
-  const [activeTab, setActiveTab] = useState('analysis')
-  // Which action is mid-flight, so only the clicked button shows a spinner
-  // (Run and Visualize share the execution store's single isLoading flag).
+  // Which action is mid-flight, so only the clicked button shows a spinner.
   const [pendingAction, setPendingAction] = useState(null)
-  // The exact source that was actually compiled/run (may be an auto-generated
-  // wrapper). Shown read-only in the editor ONLY while the Visualize tab is
-  // active, since the trace's line numbers are valid only against it.
-  const [executedSource, setExecutedSource] = useState(null)
   const [leftPct, setLeftPct] = useState(40)
   const [dragging, setDragging] = useState(false)
   const [isDesktop, setIsDesktop] = useState(true)
@@ -79,14 +82,23 @@ function WorkspacePage() {
   const executionError = useExecutionStore((state) => state.error)
   const executionSubmit = useExecutionStore((state) => state.submit)
 
+  const isBusy = isAnalyzing || isExecuting
   const isVisualizeTab = activeTab === 'visualize'
   // Editor is only read-only while the Visualize tab is showing a trace - it
-  // stays editable everywhere else (no "Edit Code" button needed).
+  // stays editable everywhere else. Refresh is the escape hatch.
   const isEditorLocked = isVisualizeTab && !!trace
   const editorValue = isVisualizeTab && executedSource != null ? executedSource : code
 
+  // Run executes only (fast, no AI). Validates the code is analyzable Java first.
   const handleRun = () => {
-    if (!code.trim() || isExecuting) return
+    if (!code.trim() || isBusy) return
+    const check = validateJavaSubmission(code)
+    if (!check.valid) {
+      setActiveTab('result')
+      useExecutionStore.getState().pause()
+      useExecutionStore.setState({ error: check.message, trace: null, isLoading: false, currentStepIndex: 0 })
+      return
+    }
     setActiveTab('result')
     setPendingAction('run')
     executionSubmit(code)
@@ -95,20 +107,31 @@ function WorkspacePage() {
       .finally(() => setPendingAction(null))
   }
 
-  const handleSubmit = () => {
-    if (!code.trim() || isAnalyzing) return
+  // Submit runs AI analysis AND execution/visualization together, landing on
+  // the Analysis tab. The Visualize tab then holds the step-through.
+  const handleSubmit = async () => {
+    if (!code.trim() || isBusy) return
+    const check = validateJavaSubmission(code)
+    if (!check.valid) {
+      setActiveTab('analysis')
+      useAnalysisStore.setState({ error: check.message, currentAnalysis: null, isLoading: false })
+      return
+    }
     setActiveTab('analysis')
-    analysisSubmit(code).catch(() => {})
+    setPendingAction('submit')
+    await Promise.allSettled([
+      analysisSubmit(code),
+      executionSubmit(code).then((response) => setExecutedSource(response.executedSourceCode)),
+    ])
+    setPendingAction(null)
   }
 
-  const handleVisualize = () => {
-    if (!code.trim() || isExecuting) return
-    setActiveTab('visualize')
-    setPendingAction('visualize')
-    executionSubmit(code)
-      .then((response) => setExecutedSource(response.executedSourceCode))
-      .catch(() => {})
-      .finally(() => setPendingAction(null))
+  // Refresh clears everything back to a blank workspace.
+  const handleRefresh = () => {
+    setPendingAction(null)
+    resetWorkspace()
+    useExecutionStore.getState().reset()
+    useAnalysisStore.getState().reset()
   }
 
   // Ctrl/Cmd+Enter runs (the fast, no-AI path), matching LeetCode. Registered
@@ -171,8 +194,6 @@ function WorkspacePage() {
     editorApiRef.current?.editor.getAction('editor.action.formatDocument')?.run()
   }
 
-  const handleClear = () => setCode('')
-
   const handleExample = () => setCode(reconstructExamplePlainText())
 
   const handleCopy = () => {
@@ -189,10 +210,12 @@ function WorkspacePage() {
   useEffect(() => () => clearTimeout(copiedTimerRef.current), [])
 
   const leftStyle = isDesktop ? { width: `${leftPct}%` } : undefined
+  const runLoading = pendingAction === 'run' && isExecuting
+  const submitLoading = pendingAction === 'submit' && isBusy
 
   return (
     <div className="flex h-screen flex-col bg-paper text-ink">
-      {/* TOP BAR: logo left · action buttons + nav grouped right (LeetCode-style) */}
+      {/* TOP BAR: logo left · Run + Submit + nav grouped right */}
       <header className="flex shrink-0 items-center justify-between gap-4 border-b border-line bg-paper-raised px-4 py-2">
         <NavLink to="/" className="flex items-center gap-2 font-mono text-lg font-bold">
           <span className="h-2 w-2 rounded-full bg-approve" />
@@ -204,32 +227,22 @@ function WorkspacePage() {
             <button
               type="button"
               onClick={handleRun}
-              disabled={isExecuting}
+              disabled={isBusy}
               title="Run — execute and see output (Ctrl+Enter)"
               className="uiverse-button-outline inline-flex items-center gap-2 font-mono text-sm font-semibold disabled:opacity-50"
             >
-              {pendingAction === 'run' && isExecuting && <Spinner />}
-              {pendingAction === 'run' && isExecuting ? 'Running…' : 'Run'}
+              {runLoading && <Spinner />}
+              {runLoading ? 'Running…' : 'Run'}
             </button>
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={isAnalyzing}
-              title="Submit — analyze pattern & complexity"
+              disabled={isBusy}
+              title="Submit — analyze and visualize your code"
               className="uiverse-button-filled inline-flex items-center gap-2 font-mono text-sm font-semibold disabled:opacity-50"
             >
-              {isAnalyzing && <Spinner />}
-              {isAnalyzing ? 'Analyzing…' : 'Submit'}
-            </button>
-            <button
-              type="button"
-              onClick={handleVisualize}
-              disabled={isExecuting}
-              title="Visualize — step through execution"
-              className="uiverse-button-outline inline-flex items-center gap-2 font-mono text-sm font-semibold disabled:opacity-50"
-            >
-              {pendingAction === 'visualize' && isExecuting && <Spinner />}
-              {pendingAction === 'visualize' && isExecuting ? 'Running…' : 'Visualize'}
+              {submitLoading && <Spinner />}
+              {submitLoading ? 'Analyzing…' : 'Submit'}
             </button>
           </div>
 
@@ -285,7 +298,9 @@ function WorkspacePage() {
                   <ConsoleOutputPanel />
                 </div>
               ) : (
-                <EmptyState message="Run your code to see the execution outcome and console output here." />
+                !executionError && (
+                  <EmptyState message="Run your code to see the execution outcome and console output here." />
+                )
               ))}
 
             {activeTab === 'analysis' && <AnalysisPanel />}
@@ -303,7 +318,7 @@ function WorkspacePage() {
                   </div>
                 </div>
               ) : (
-                <EmptyState message="Click Visualize to step through your code's execution line by line." />
+                <EmptyState message="Click Submit (or Run) to build a step-through of your code's execution." />
               ))}
           </div>
 
@@ -328,7 +343,7 @@ function WorkspacePage() {
         <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[15px]">
           <EditorToolbar
             onFormat={handleFormat}
-            onClear={handleClear}
+            onRefresh={handleRefresh}
             onExample={handleExample}
             onCopy={handleCopy}
             copied={copied}

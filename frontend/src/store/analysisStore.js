@@ -46,4 +46,8 @@ export const useAnalysisStore = create((set) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  // Clears the current workspace analysis (used by the Refresh button). Leaves
+  // `history` alone — that's list data, not part of the active workspace.
+  reset: () => set({ currentAnalysis: null, error: null, isLoading: false }),
 }))
