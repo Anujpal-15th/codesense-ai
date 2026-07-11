@@ -20,7 +20,7 @@ function PlaybackControls() {
         type="button"
         onClick={stepBackward}
         disabled={currentStepIndex === 0}
-        className="rounded-md border border-line px-3 py-1.5 font-mono text-sm text-ink disabled:opacity-40"
+        className="uiverse-button-outline font-mono text-sm"
       >
         ← Step
       </button>
@@ -29,7 +29,7 @@ function PlaybackControls() {
         type="button"
         onClick={isPlaying ? pause : play}
         disabled={currentStepIndex >= lastIndex && !isPlaying}
-        className="rounded-md bg-primary px-3 py-1.5 font-mono text-sm font-semibold text-white hover:bg-primary-hover disabled:opacity-40"
+        className="uiverse-button-filled font-mono text-sm"
       >
         {isPlaying ? 'Pause' : 'Play'}
       </button>
@@ -38,7 +38,7 @@ function PlaybackControls() {
         type="button"
         onClick={stepForward}
         disabled={currentStepIndex >= lastIndex}
-        className="rounded-md border border-line px-3 py-1.5 font-mono text-sm text-ink disabled:opacity-40"
+        className="uiverse-button-outline font-mono text-sm"
       >
         Step →
       </button>
