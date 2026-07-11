@@ -162,6 +162,15 @@ function WorkspacePage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // The Analysis tab reads analysisStore.currentAnalysis - the same store slot
+  // AnalysisDetailPage used to write into (that page now uses local state
+  // instead, but this guard stays regardless: anything else that ever sets
+  // currentAnalysis outside a workspace submit shouldn't leak in here either).
+  // Clearing on mount means arriving at /analyze always starts clean.
+  useEffect(() => {
+    useAnalysisStore.getState().reset()
+  }, [])
+
   // Track desktop vs mobile so the drag-resized width only applies on lg+
   // (below that the panels stack vertically and a % width would be wrong).
   useEffect(() => {

@@ -1,7 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { getAnalysisById } from '../api/analysisApi'
 import ResultCard from '../components/ResultCard'
-import { useAnalysisStore } from '../store/analysisStore'
 
 function SubmittedCode({ code }) {
   if (!code) return null
@@ -17,22 +17,44 @@ function SubmittedCode({ code }) {
   )
 }
 
+function extractErrorMessage(error) {
+  return error.response?.data?.error ?? error.message ?? 'Something went wrong'
+}
+
+// Deliberately local React state, NOT the shared analysisStore - that store is
+// also what WorkspacePage's Analysis tab reads, and this page's fetched record
+// has nothing to do with the workspace. Keeping it local means it's isolated by
+// construction: it lives only as long as this component is mounted, and simply
+// disappears (no cleanup needed) the moment the user navigates elsewhere.
 function AnalysisDetailPage() {
   const { id } = useParams()
-  const currentAnalysis = useAnalysisStore((state) => state.currentAnalysis)
-  const isLoading = useAnalysisStore((state) => state.isLoading)
-  const error = useAnalysisStore((state) => state.error)
-  const fetchAnalysisById = useAnalysisStore((state) => state.fetchAnalysisById)
+  const [analysis, setAnalysis] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    fetchAnalysisById(id).catch(() => {})
-  }, [id, fetchAnalysisById])
+    let cancelled = false
+    setIsLoading(true)
+    setError(null)
+    setAnalysis(null)
 
-  // The list view and detail view share the store's `currentAnalysis` slot, so
-  // a stale record from a previous card can flash before this id's data loads.
-  // Only render the analysis once the loaded record actually matches the route.
-  const analysisForThisRoute =
-    currentAnalysis && String(currentAnalysis.id) === String(id) ? currentAnalysis : null
+    getAnalysisById(id)
+      .then((data) => {
+        if (!cancelled) setAnalysis(data)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(extractErrorMessage(err))
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+
+    // Guards against a stale fetch (e.g. navigating detail-of-A -> detail-of-B
+    // while A's request is still in flight) from overwriting B's state.
+    return () => {
+      cancelled = true
+    }
+  }, [id])
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
@@ -40,12 +62,12 @@ function AnalysisDetailPage() {
         ← Back to history
       </Link>
 
-      {isLoading && !analysisForThisRoute && <p className="text-ink-soft">Loading…</p>}
+      {isLoading && <p className="text-ink-soft">Loading…</p>}
       {error && <p className="text-correct">{error}</p>}
-      {analysisForThisRoute && (
+      {!isLoading && !error && analysis && (
         <>
-          <SubmittedCode code={analysisForThisRoute.codeSnippet} />
-          <ResultCard analysis={analysisForThisRoute} />
+          <SubmittedCode code={analysis.codeSnippet} />
+          <ResultCard analysis={analysis} />
         </>
       )}
     </div>
