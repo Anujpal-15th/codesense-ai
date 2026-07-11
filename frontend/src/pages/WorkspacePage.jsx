@@ -107,8 +107,14 @@ function WorkspacePage() {
       .finally(() => setPendingAction(null))
   }
 
-  // Submit runs AI analysis AND execution/visualization together, landing on
-  // the Analysis tab. The Visualize tab then holds the step-through.
+  // Submit runs AI analysis AND execution/visualization together, in parallel
+  // (Promise.all - both requests fire immediately, neither waits on the other).
+  // Lands on the Analysis tab right away; each tab reads its own store's
+  // isLoading/data independently, so whichever call finishes first renders
+  // immediately instead of both being gated behind the slower one. Execution
+  // is typically the faster call (sub-second) against the LLM-backed analysis
+  // (several seconds), so in practice the Visualize tab's content is usually
+  // ready well before the Analysis tab's is.
   const handleSubmit = async () => {
     if (!code.trim() || isBusy) return
     const check = validateJavaSubmission(code)
@@ -119,11 +125,19 @@ function WorkspacePage() {
     }
     setActiveTab('analysis')
     setPendingAction('submit')
-    await Promise.allSettled([
-      analysisSubmit(code),
-      executionSubmit(code).then((response) => setExecutedSource(response.executedSourceCode)),
-    ])
-    setPendingAction(null)
+    try {
+      await Promise.all([
+        analysisSubmit(code),
+        executionSubmit(code).then((response) => setExecutedSource(response.executedSourceCode)),
+      ])
+    } catch {
+      // Each store already recorded its own error via its own submit() - see
+      // executionStore/analysisStore. Nothing further to do here; this catch
+      // only exists so a single failing call can't produce an unhandled
+      // rejection while the other call is still in flight.
+    } finally {
+      setPendingAction(null)
+    }
   }
 
   // Refresh clears everything back to a blank workspace.
@@ -316,6 +330,11 @@ function WorkspacePage() {
                   <div className="rounded-lg border border-line bg-paper-raised p-4">
                     <MemoryView />
                   </div>
+                </div>
+              ) : isExecuting ? (
+                <div className="flex items-center gap-3 rounded-lg border border-line bg-paper-raised p-6 text-sm text-ink-soft">
+                  <Spinner />
+                  Building visualization…
                 </div>
               ) : (
                 <EmptyState message="Click Submit (or Run) to build a step-through of your code's execution." />
