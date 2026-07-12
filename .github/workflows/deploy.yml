@@ -43,6 +43,34 @@ jobs:
           # the service on a stale or half-built jar.
           script: cd /home/azureuser/codesense-ai && git pull origin main && cd backend && mvn clean package -DskipTests -q && sudo systemctl restart codesense && sleep 25 && curl -f -o /dev/null http://localhost:8080/api/analyses
 
+  deploy-frontend:
+    name: Deploy frontend to Vercel
+    needs: deploy
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: cd frontend && npm ci
+
+      # Fast-fail gate, same rationale as the backend's redundant compile step
+      # above: catches a broken build before spending a Vercel deploy on it.
+      # `vercel --prod` below does its own remote build regardless (it doesn't
+      # consume this dist/ output), so this step is deliberately redundant,
+      # not a replacement for it.
+      - name: Build frontend
+        run: cd frontend && npm run build
+
+      - name: Deploy to Vercel
+        run: cd frontend && npx vercel --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
+
   smoke-test:
     name: Smoke test (analysis regression suite)
     needs: deploy
