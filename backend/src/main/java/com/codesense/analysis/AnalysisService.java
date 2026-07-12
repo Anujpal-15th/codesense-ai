@@ -36,8 +36,13 @@ public class AnalysisService {
      * @param language "java" or "python"; null/blank defaults to "java" for
      *                 pre-language clients. The LLM prompt is language-agnostic
      *                 (a DSA coach), so only the validation gate branches here.
+     * @param userId   opaque client-generated id from the X-User-Id header, or
+     *                 null if the caller didn't send one - stored as-is (a null
+     *                 userId just means this row never shows up in any history
+     *                 list, same as the pre-existing rows from before this
+     *                 column existed).
      */
-    public AnalysisResponse analyze(String codeSnippet, String language) {
+    public AnalysisResponse analyze(String codeSnippet, String language, String userId) {
         String lang = language == null || language.isBlank()
                 ? "java"
                 : language.trim().toLowerCase(java.util.Locale.ROOT);
@@ -86,6 +91,7 @@ public class AnalysisService {
         }
 
         Analysis analysis = new Analysis();
+        analysis.setUserId(userId);
         analysis.setCodeSnippet(codeSnippet);
         analysis.setPattern(pattern);
         analysis.setTimeComplexity(result.timeComplexity());
@@ -108,23 +114,47 @@ public class AnalysisService {
         return AnalysisResponse.from(saved);
     }
 
-    public List<AnalysisResponse> getHistory() {
-        return analysisRepository.findAllByOrderByCreatedAtDesc().stream()
+    /**
+     * @param userId no header sent -> empty list, not an error and not "every
+     *               user's history": there's no login, so an absent userId
+     *               can't be trusted to mean anything more specific.
+     */
+    public List<AnalysisResponse> getHistory(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return List.of();
+        }
+        return analysisRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
                 .map(AnalysisResponse::from)
                 .toList();
     }
 
     /**
      * Lightweight history list for the list view - see
-     * {@link AnalysisRepository#findAllSummaries()}. The full record is fetched
-     * per-row via {@link #getById(Long)} when a card is opened.
+     * {@link AnalysisRepository#findSummariesByUserId(String)}. The full record
+     * is fetched per-row via {@link #getById(Long, String)} when a card is opened.
+     *
+     * @param userId no header sent -> empty list (see {@link #getHistory(String)}).
      */
-    public List<AnalysisSummaryResponse> getHistorySummaries() {
-        return analysisRepository.findAllSummaries();
+    public List<AnalysisSummaryResponse> getHistorySummaries(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return List.of();
+        }
+        return analysisRepository.findSummariesByUserId(userId);
     }
 
-    public AnalysisResponse getById(Long id) {
-        Analysis analysis = analysisRepository.findById(id)
+    /** @param userId must match the row's owner or this 404s exactly like a
+     *                nonexistent id - a wrong/missing userId never leaks
+     *                whether the id exists for someone else. Guarded explicitly
+     *                against null/blank before it ever reaches the repository:
+     *                Spring Data JPA derived queries turn "= null" into
+     *                "IS NULL", so a bare findByIdAndUserId(id, null) would
+     *                actually match the legacy rows that have no owner - the
+     *                opposite of what a missing header should do. */
+    public AnalysisResponse getById(Long id, String userId) {
+        if (userId == null || userId.isBlank()) {
+            throw new AnalysisNotFoundException(id);
+        }
+        Analysis analysis = analysisRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new AnalysisNotFoundException(id));
         return AnalysisResponse.from(analysis);
     }

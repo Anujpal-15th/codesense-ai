@@ -23,6 +23,16 @@ public class Analysis {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Opaque client-generated id (frontend: crypto.randomUUID() in localStorage,
+     * sent as the X-User-Id header) used to scope history to "whoever submitted
+     * it" with no login. Nullable: the 125+ rows that predate this column have
+     * no owner and simply never match any real userId, so they don't show up in
+     * anyone's history - not deleted, just orphaned by design.
+     */
+    @Column(name = "user_id", nullable = true)
+    private String userId;
+
     @Column(columnDefinition = "TEXT")
     private String codeSnippet;
 

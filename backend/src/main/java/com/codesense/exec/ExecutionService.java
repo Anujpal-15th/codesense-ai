@@ -52,8 +52,14 @@ public class ExecutionService {
      * @param language "java" or "python"; null/blank defaults to "java" so
      *                 pre-language clients (and the regression suite's plain
      *                 {@code {sourceCode}} payloads) keep working unchanged.
+     * @param userId   opaque client-generated id from the X-User-Id header, or
+     *                 null if absent. Executions aren't persisted at all yet
+     *                 (see ExecutionResponse - no DB row), so there's nothing to
+     *                 scope by owner today; accepted now so the header threads
+     *                 through the same path analyses use, ready for whenever
+     *                 execution history exists.
      */
-    public ExecutionResponse execute(String sourceCode, String language) {
+    public ExecutionResponse execute(String sourceCode, String language, String userId) {
         String lang = language == null || language.isBlank()
                 ? "java"
                 : language.trim().toLowerCase(java.util.Locale.ROOT);
@@ -61,6 +67,7 @@ public class ExecutionService {
         // Reject wrong-language code and instruction-only payloads before we
         // spawn anything. Throws InvalidSubmissionException -> 400.
         submissionValidator.validate(sourceCode, lang);
+        log.debug("Execution request: language={} userId={}", lang, userId);
 
         if ("python".equals(lang)) {
             return pythonExecutionHandler.execute(sourceCode);

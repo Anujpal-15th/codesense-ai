@@ -6,7 +6,7 @@ import java.time.Instant;
 
 /**
  * Lightweight history-list row for {@code GET /api/analyses/summary}. Populated
- * by a JPQL constructor-expression query ({@link AnalysisRepository#findAllSummaries()})
+ * by a JPQL constructor-expression query ({@link AnalysisRepository#findSummariesByUserId(String)})
  * that selects only these scalar columns — it never loads the three
  * {@code @ElementCollection} tables (bugs/edgeCases/learningTips) or the large
  * unused TEXT columns, which is what made the full-entity history query slow.
