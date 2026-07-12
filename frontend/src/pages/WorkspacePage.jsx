@@ -61,7 +61,8 @@ function WorkspacePage() {
   const setExecutedSource = useWorkspaceStore((state) => state.setExecutedSource)
   const resetWorkspace = useWorkspaceStore((state) => state.resetWorkspace)
 
-  const [copied, setCopied] = useState(false)
+  // 'idle' | 'copied' | 'failed' - drives the Copy button's transient feedback.
+  const [copyStatus, setCopyStatus] = useState('idle')
   // Which action is mid-flight, so only the clicked button shows a spinner.
   const [pendingAction, setPendingAction] = useState(null)
   const [leftPct, setLeftPct] = useState(40)
@@ -220,14 +221,41 @@ function WorkspacePage() {
   const handleExample = () => setCode(reconstructExamplePlainText())
 
   const handleCopy = () => {
-    navigator.clipboard
-      .writeText(code)
-      .then(() => {
-        setCopied(true)
-        clearTimeout(copiedTimerRef.current)
-        copiedTimerRef.current = setTimeout(() => setCopied(false), 1500)
-      })
-      .catch(() => {})
+    const flash = (status, ms) => {
+      setCopyStatus(status)
+      clearTimeout(copiedTimerRef.current)
+      copiedTimerRef.current = setTimeout(() => setCopyStatus('idle'), ms)
+    }
+
+    // Synchronous fallback for contexts where the async Clipboard API is
+    // blocked (insecure origin, permissions policy, embedded frames). Uses a
+    // throwaway off-screen textarea + execCommand, which only needs the click's
+    // user activation rather than clipboard-write permission.
+    const legacyCopy = () => {
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = code
+        ta.style.position = 'fixed'
+        ta.style.top = '-9999px'
+        ta.setAttribute('readonly', '')
+        document.body.appendChild(ta)
+        ta.select()
+        const ok = document.execCommand('copy')
+        document.body.removeChild(ta)
+        return ok
+      } catch {
+        return false
+      }
+    }
+
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(code)
+        .then(() => flash('copied', 1500))
+        .catch(() => flash(legacyCopy() ? 'copied' : 'failed', 2500))
+    } else {
+      flash(legacyCopy() ? 'copied' : 'failed', 2500)
+    }
   }
 
   useEffect(() => () => clearTimeout(copiedTimerRef.current), [])
@@ -379,7 +407,7 @@ function WorkspacePage() {
             onRefresh={handleRefresh}
             onExample={handleExample}
             onCopy={handleCopy}
-            copied={copied}
+            copyStatus={copyStatus}
             disabled={isEditorLocked}
           />
           <div className="h-[55vh] min-h-0 lg:h-auto lg:flex-1">

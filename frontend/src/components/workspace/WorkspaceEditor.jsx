@@ -17,6 +17,14 @@ function WorkspaceEditor({
   const monacoRef = useRef(null)
   const decorationsRef = useRef(null)
 
+  // Kept in a ref (updated during render, before any effect runs) so the
+  // onChange handler below always sees the *current* readOnly, even when
+  // Monaco's onChange subscription fires from a stale-closure render. A plain
+  // `readOnly` prop read would be stale: @monaco-editor/react's value-prop sync
+  // effect can fire onChange before it re-subscribes to the new handler.
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
+
   const currentLine = useExecutionStore(selectCurrentLine)
 
   function handleMount(editor, monaco) {
@@ -25,6 +33,16 @@ function WorkspaceEditor({
     decorationsRef.current = editor.createDecorationsCollection([])
     registerJavaFormatter(monaco)
     onEditorMount?.(editor, monaco)
+  }
+
+  // Monaco's onChange fires for programmatic model updates too, not just user
+  // typing. On the Visualize tab the `value` prop is the executed (wrapped)
+  // source, so without this guard that sync would call onCodeChange and
+  // overwrite the user's original code. Read-only means "showing executed
+  // source, not the user's code" - never propagate those changes upward.
+  function handleChange(value) {
+    if (readOnlyRef.current) return
+    onCodeChange(value ?? '')
   }
 
   useEffect(() => {
@@ -60,7 +78,7 @@ function WorkspaceEditor({
         language={language}
         theme={theme}
         value={code}
-        onChange={(value) => onCodeChange(value ?? '')}
+        onChange={handleChange}
         onMount={handleMount}
         options={{ readOnly, automaticLayout: true }}
       />

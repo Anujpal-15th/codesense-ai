@@ -30,7 +30,9 @@ function RefreshIcon() {
   )
 }
 
-function EditorToolbar({ onFormat, onRefresh, onExample, onCopy, copied, disabled }) {
+function EditorToolbar({ onFormat, onRefresh, onExample, onCopy, copyStatus = 'idle', disabled }) {
+  const copyLabel =
+    copyStatus === 'copied' ? 'Copied! ✓' : copyStatus === 'failed' ? 'Copy failed — copy manually' : 'Copy'
   return (
     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-paper-raised px-4 py-2">
       {/* Non-interactive language badge — Java only, no dropdown. */}
@@ -45,10 +47,14 @@ function EditorToolbar({ onFormat, onRefresh, onExample, onCopy, copied, disable
           type="button"
           onClick={onCopy}
           className={`rounded-md px-2.5 py-1.5 font-mono text-xs font-semibold transition-colors ${
-            copied ? 'text-approve' : 'text-ink-soft hover:bg-paper hover:text-ink'
+            copyStatus === 'copied'
+              ? 'text-approve'
+              : copyStatus === 'failed'
+                ? 'text-correct'
+                : 'text-ink-soft hover:bg-paper hover:text-ink'
           }`}
         >
-          {copied ? 'Copied! ✓' : 'Copy'}
+          {copyLabel}
         </button>
         {/* Refresh resets everything — always enabled, since it's also the way
             out of the read-only Visualize state. */}
