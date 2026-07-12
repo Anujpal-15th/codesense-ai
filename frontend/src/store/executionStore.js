@@ -20,7 +20,7 @@ export const useExecutionStore = create((set, get) => ({
   currentStepIndex: 0,
   isPlaying: false,
 
-  submit: async (sourceCode) => {
+  submit: async (sourceCode, language = 'java') => {
     get().pause()
     set({
       isLoading: true,
@@ -32,7 +32,7 @@ export const useExecutionStore = create((set, get) => ({
       isPlaying: false,
     })
     try {
-      const response = await submitExecution(sourceCode)
+      const response = await submitExecution(sourceCode, language)
       set({
         trace: response.trace,
         createdAt: response.createdAt,

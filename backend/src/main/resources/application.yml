@@ -39,6 +39,22 @@ github-models:
   token: ${GITHUB_MODELS_TOKEN:}
   model: ${GITHUB_MODELS_MODEL:openai/gpt-4o-mini}
 
+rate-limit:
+  enabled: ${RATE_LIMIT_ENABLED:true}
+  # Only trusted when the direct TCP peer's address matches one of these -
+  # otherwise an external client could forge X-Forwarded-For to spoof its
+  # source IP and dodge/frame another IP's limit. Add the reverse proxy's
+  # address here once nginx/Caddy is in front of Spring Boot on the droplet.
+  trusted-proxies: ${RATE_LIMIT_TRUSTED_PROXIES:127.0.0.1,::1}
+  analyses:
+    capacity: ${RATE_LIMIT_ANALYSES_CAPACITY:20}
+    refill-tokens: ${RATE_LIMIT_ANALYSES_REFILL_TOKENS:20}
+    refill-period-seconds: ${RATE_LIMIT_ANALYSES_REFILL_PERIOD_SECONDS:60}
+  executions:
+    capacity: ${RATE_LIMIT_EXECUTIONS_CAPACITY:10}
+    refill-tokens: ${RATE_LIMIT_EXECUTIONS_REFILL_TOKENS:10}
+    refill-period-seconds: ${RATE_LIMIT_EXECUTIONS_REFILL_PERIOD_SECONDS:60}
+
 execution:
   sandbox:
     # local-process performs NO isolation - never use in an environment that
@@ -57,6 +73,10 @@ execution:
       # internet access. Linux deployment only; dev uses local-process.
       network: ${EXECUTION_SANDBOX_NETWORK:codesense-sandbox-net}
     readiness-timeout-seconds: ${EXECUTION_READINESS_TIMEOUT_SECONDS:10}
+  python:
+    # Blank = auto-detect (python3, then python, then py). Only used by
+    # local-process mode; docker mode always runs python3 inside the image.
+    executable: ${EXECUTION_PYTHON_EXECUTABLE:}
   limits:
     max-steps: ${EXECUTION_MAX_STEPS:2000}
     max-stack-depth: ${EXECUTION_MAX_STACK_DEPTH:64}

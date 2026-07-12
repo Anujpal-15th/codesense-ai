@@ -32,10 +32,18 @@ public class AnalysisService {
     private final ComplexityClaimGuard complexityClaimGuard;
     private final CodeSubmissionValidator submissionValidator;
 
-    public AnalysisResponse analyze(String codeSnippet) {
-        // Reject non-Java code and natural-language instructions before the LLM
-        // call (prompt-injection guard). Throws InvalidSubmissionException -> 400.
-        submissionValidator.validate(codeSnippet);
+    /**
+     * @param language "java" or "python"; null/blank defaults to "java" for
+     *                 pre-language clients. The LLM prompt is language-agnostic
+     *                 (a DSA coach), so only the validation gate branches here.
+     */
+    public AnalysisResponse analyze(String codeSnippet, String language) {
+        String lang = language == null || language.isBlank()
+                ? "java"
+                : language.trim().toLowerCase(java.util.Locale.ROOT);
+        // Reject wrong-language code and natural-language instructions before
+        // the LLM call (prompt-injection guard). InvalidSubmissionException -> 400.
+        submissionValidator.validate(codeSnippet, lang);
 
         String llmInput = customDataStructureDetector.looksLikeCustomDataStructure(codeSnippet)
                 ? codeSnippet + CUSTOM_DATA_STRUCTURE_HINT

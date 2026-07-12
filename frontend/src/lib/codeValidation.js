@@ -8,10 +8,16 @@
 //      analyzes code, it doesn't generate it (prompt-injection guard).
 
 export const LANGUAGE_ERROR =
-  'Only Java code is currently supported. Python, JavaScript, and other languages are not yet available.'
+  "This doesn't look like Java. Switch the language selector if you're writing Python, or paste Java code."
 
 export const INSTRUCTION_ERROR =
   "Please paste actual Java code, not instructions. CodeSense analyzes code — it doesn't generate it."
+
+export const PYTHON_INSTRUCTION_ERROR =
+  "Please paste actual Python code, not instructions. CodeSense analyzes code — it doesn't generate it."
+
+export const JAVA_IN_PYTHON_ERROR =
+  'This looks like Java code. Switch the language selector to Java, or paste Python code.'
 
 // Replace the contents of string/char literals and comments with spaces
 // (length preserved, newlines kept) so a `=>` or `print(` inside a Java string
@@ -111,4 +117,44 @@ export function validateJavaSubmission(rawCode) {
   }
 
   return { valid: true }
+}
+
+// Anything that reads as executable Python rather than prose. Mirrors the
+// backend's PYTHON_CODE_SIGNAL in CodeSubmissionValidator.
+const PYTHON_CODE_SIGNAL =
+  /(^|\n)[ \t]*(def|class|import|from|for|while|if|return|print|with|try)\b|[=()[\]:]/
+
+// Signals that clearly identify Java pasted while Python is selected.
+const JAVA_IN_PYTHON_SIGNALS = [
+  /\b(public|private|protected)\s+(static\s+)?[\w<>[\]]+\s+\w+\s*\(/,
+  /\bSystem\s*\.\s*out\s*\./,
+  /\b(public|private)\s+(class|interface|enum)\s+\w+/,
+  /\bnew\s+\w+\s*(<[^>]*>)?\s*\(/,
+]
+
+export function validatePythonSubmission(rawCode) {
+  const code = (rawCode ?? '').trim()
+  if (!code) return { valid: false, reason: 'instruction', message: PYTHON_INSTRUCTION_ERROR }
+
+  // Prose guard: "create a merge sort" has no code signal at all.
+  if (!PYTHON_CODE_SIGNAL.test(code) && looksLikeInstruction(code)) {
+    return { valid: false, reason: 'instruction', message: PYTHON_INSTRUCTION_ERROR }
+  }
+
+  // Java pasted while Python is selected would only produce a confusing
+  // SyntaxError from the interpreter - name the actual problem instead.
+  if (
+    JAVA_IN_PYTHON_SIGNALS.some((re) => re.test(code)) &&
+    code.includes(';') &&
+    code.includes('{')
+  ) {
+    return { valid: false, reason: 'language', message: JAVA_IN_PYTHON_ERROR }
+  }
+
+  return { valid: true }
+}
+
+// Language-dispatching entry point used by the workspace.
+export function validateSubmission(rawCode, language) {
+  return language === 'python' ? validatePythonSubmission(rawCode) : validateJavaSubmission(rawCode)
 }

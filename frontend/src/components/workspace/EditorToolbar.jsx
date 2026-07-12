@@ -30,18 +30,35 @@ function RefreshIcon() {
   )
 }
 
-function EditorToolbar({ onFormat, onRefresh, onExample, onCopy, copyStatus = 'idle', disabled }) {
+function EditorToolbar({
+  onFormat,
+  onRefresh,
+  onExample,
+  onCopy,
+  copyStatus = 'idle',
+  disabled,
+  language = 'java',
+  onLanguageChange,
+}) {
   const copyLabel =
     copyStatus === 'copied' ? 'Copied! ✓' : copyStatus === 'failed' ? 'Copy failed — copy manually' : 'Copy'
   return (
     <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-paper-raised px-4 py-2">
-      {/* Non-interactive language badge — Java only, no dropdown. */}
-      <span className="rounded-md border border-line bg-paper px-2.5 py-1 font-mono text-xs font-semibold text-ink-soft">
-        Java
-      </span>
+      <select
+        value={language}
+        onChange={(e) => onLanguageChange?.(e.target.value)}
+        disabled={disabled}
+        aria-label="Language"
+        className="cursor-pointer rounded-md border border-line bg-paper px-2.5 py-1 font-mono text-xs font-semibold text-ink-soft hover:text-ink disabled:cursor-default disabled:opacity-40"
+      >
+        <option value="java">Java</option>
+        <option value="python">Python</option>
+      </select>
 
       <div className="flex items-center gap-3">
-        <ToolbarButton onClick={onFormat} disabled={disabled} label="Format" />
+        {/* Monaco only has a Java formatter registered (formatJava.js) - no
+            Python formatting yet, so the button is Java-only. */}
+        <ToolbarButton onClick={onFormat} disabled={disabled || language !== 'java'} label="Format" />
         <ToolbarButton onClick={onExample} disabled={disabled} label="Example" />
         <button
           type="button"

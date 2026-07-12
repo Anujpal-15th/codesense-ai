@@ -13,6 +13,24 @@ function reconstructMethodBody(example) {
 // `Main` class with a synthesized sample call matching its exact signature
 // (`longestSubarray(int[] nums, int k)`), so `hasMainClass()` is true and no LLM/network
 // call is ever needed for this button.
+// Python twin of the Java example below - same sliding-window algorithm, with
+// a top-level driver call so it runs directly (no wrapping needed).
+export const PYTHON_EXAMPLE = `def longest_subarray(nums, k):
+    left = 0
+    total = 0
+    best = 0
+    for right in range(len(nums)):
+        total += nums[right]
+        while total > k:
+            total -= nums[left]
+            left += 1
+        best = max(best, right - left + 1)
+    return best
+
+
+print(longest_subarray([2, 1, 3, 4, 1, 2, 1, 5, 4], 8))
+`
+
 export function reconstructExamplePlainText() {
   const method = reconstructMethodBody(EXAMPLES[0])
   const indented = method

@@ -11,10 +11,10 @@ export const useAnalysisStore = create((set) => ({
   isLoading: false,
   error: null,
 
-  submit: async (codeSnippet) => {
+  submit: async (codeSnippet, language = 'java') => {
     set({ isLoading: true, error: null })
     try {
-      const analysis = await submitAnalysis(codeSnippet)
+      const analysis = await submitAnalysis(codeSnippet, language)
       set({ currentAnalysis: analysis, isLoading: false })
       return analysis
     } catch (error) {

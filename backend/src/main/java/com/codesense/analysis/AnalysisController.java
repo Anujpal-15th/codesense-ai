@@ -23,7 +23,7 @@ public class AnalysisController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public AnalysisResponse create(@Valid @RequestBody AnalysisRequest request) {
-        return analysisService.analyze(request.codeSnippet());
+        return analysisService.analyze(request.codeSnippet(), request.language());
     }
 
     @GetMapping

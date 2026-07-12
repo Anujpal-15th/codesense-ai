@@ -16,10 +16,16 @@ import java.util.regex.Pattern;
 public class CodeSubmissionValidator {
 
     public static final String LANGUAGE_ERROR =
-            "Only Java code is currently supported. Python, JavaScript, and other languages are not yet available.";
+            "This doesn't look like Java. Switch the language selector if you're writing Python, or paste Java code.";
 
     public static final String INSTRUCTION_ERROR =
             "Please paste actual Java code, not instructions. CodeSense analyzes code — it doesn't generate it.";
+
+    public static final String PYTHON_INSTRUCTION_ERROR =
+            "Please paste actual Python code, not instructions. CodeSense analyzes code — it doesn't generate it.";
+
+    public static final String JAVA_IN_PYTHON_ERROR =
+            "This looks like Java code. Switch the language selector to Java, or paste Python code.";
 
     private static final Pattern CODE_SYNTAX = Pattern.compile("[{}()\\[\\];]");
     private static final Pattern TYPE_DECL = Pattern.compile("\\b(class|interface|enum)\\s+\\w+");
@@ -48,8 +54,52 @@ public class CodeSubmissionValidator {
             Pattern.compile("\\b(const|let)\\s+\\w+\\s*=")                               // JS declarations
     );
 
-    /** Throws {@link InvalidSubmissionException} if the submission isn't analyzable Java. */
+    /** Signals that clearly identify Java when the user selected Python. */
+    private static final List<Pattern> JAVA_IN_PYTHON_SIGNALS = List.of(
+            Pattern.compile("\\b(public|private|protected)\\s+(static\\s+)?[\\w<>\\[\\]]+\\s+\\w+\\s*\\("),
+            Pattern.compile("\\bSystem\\s*\\.\\s*out\\s*\\."),
+            Pattern.compile("\\b(public|private)\\s+(class|interface|enum)\\s+\\w+"),
+            Pattern.compile("\\bnew\\s+\\w+\\s*(<[^>]*>)?\\s*\\(")
+    );
+
+    /** Anything that reads as executable Python rather than prose. */
+    private static final Pattern PYTHON_CODE_SIGNAL = Pattern.compile(
+            "(^|\\n)[ \\t]*(def|class|import|from|for|while|if|return|print|with|try)\\b"
+                    + "|[=()\\[\\]:]");
+
+    /** Backward-compatible entry point - validates as Java. */
     public void validate(String rawCode) {
+        validate(rawCode, "java");
+    }
+
+    /** Throws {@link InvalidSubmissionException} if the submission isn't
+     * analyzable code in the selected language ("java" or "python"). */
+    public void validate(String rawCode, String language) {
+        if ("python".equalsIgnoreCase(language)) {
+            validatePython(rawCode);
+            return;
+        }
+        validateJava(rawCode);
+    }
+
+    private void validatePython(String rawCode) {
+        String code = rawCode == null ? "" : rawCode.trim();
+        if (code.isEmpty()) {
+            throw new InvalidSubmissionException(PYTHON_INSTRUCTION_ERROR);
+        }
+        // Prose guard first: "create a merge sort" has no code signal at all.
+        if (!PYTHON_CODE_SIGNAL.matcher(code).find() && looksLikeInstruction(code)) {
+            throw new InvalidSubmissionException(PYTHON_INSTRUCTION_ERROR);
+        }
+        // Java pasted while Python is selected would only produce a confusing
+        // SyntaxError from the interpreter - name the actual problem instead.
+        if (JAVA_IN_PYTHON_SIGNALS.stream().anyMatch(p -> p.matcher(code).find())
+                && code.contains(";") && code.contains("{")) {
+            throw new InvalidSubmissionException(JAVA_IN_PYTHON_ERROR);
+        }
+    }
+
+    private void validateJava(String rawCode) {
         String code = rawCode == null ? "" : rawCode.trim();
         if (code.isEmpty()) {
             throw new InvalidSubmissionException(INSTRUCTION_ERROR);

@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom'
 import AnalysisPanel from '../components/workspace/AnalysisPanel'
 import ConsoleOutputPanel from '../components/workspace/ConsoleOutputPanel'
 import EditorToolbar from '../components/workspace/EditorToolbar'
-import { reconstructExamplePlainText } from '../components/workspace/exampleSnippet'
+import { PYTHON_EXAMPLE, reconstructExamplePlainText } from '../components/workspace/exampleSnippet'
 import WorkspaceEditor from '../components/workspace/WorkspaceEditor'
 import CallStackPanel from '../components/execution/CallStackPanel'
 import OutcomeBanner from '../components/execution/OutcomeBanner'
@@ -12,7 +12,7 @@ import ExecutionNarrative from '../components/visualization/ExecutionNarrative'
 import MemoryView from '../components/visualization/MemoryView'
 import RecursionBadge from '../components/visualization/RecursionBadge'
 import VariablesPanel from '../components/visualization/VariablesPanel'
-import { validateJavaSubmission } from '../lib/codeValidation'
+import { validateSubmission } from '../lib/codeValidation'
 import { useAnalysisStore } from '../store/analysisStore'
 import { useExecutionStore } from '../store/executionStore'
 import { useWorkspaceStore } from '../store/workspaceStore'
@@ -55,6 +55,8 @@ function WorkspacePage() {
   // (Workspace -> History -> back) and reloads. See workspaceStore.
   const code = useWorkspaceStore((state) => state.code)
   const setCode = useWorkspaceStore((state) => state.setCode)
+  const language = useWorkspaceStore((state) => state.language)
+  const setLanguage = useWorkspaceStore((state) => state.setLanguage)
   const activeTab = useWorkspaceStore((state) => state.activeTab)
   const setActiveTab = useWorkspaceStore((state) => state.setActiveTab)
   const executedSource = useWorkspaceStore((state) => state.executedSource)
@@ -93,7 +95,7 @@ function WorkspacePage() {
   // Run executes only (fast, no AI). Validates the code is analyzable Java first.
   const handleRun = () => {
     if (!code.trim() || isBusy) return
-    const check = validateJavaSubmission(code)
+    const check = validateSubmission(code, language)
     if (!check.valid) {
       setActiveTab('result')
       useExecutionStore.getState().pause()
@@ -102,7 +104,7 @@ function WorkspacePage() {
     }
     setActiveTab('result')
     setPendingAction('run')
-    executionSubmit(code)
+    executionSubmit(code, language)
       .then((response) => setExecutedSource(response.executedSourceCode))
       .catch(() => {})
       .finally(() => setPendingAction(null))
@@ -118,7 +120,7 @@ function WorkspacePage() {
   // ready well before the Analysis tab's is.
   const handleSubmit = async () => {
     if (!code.trim() || isBusy) return
-    const check = validateJavaSubmission(code)
+    const check = validateSubmission(code, language)
     if (!check.valid) {
       setActiveTab('analysis')
       useAnalysisStore.setState({ error: check.message, currentAnalysis: null, isLoading: false })
@@ -128,8 +130,8 @@ function WorkspacePage() {
     setPendingAction('submit')
     try {
       await Promise.all([
-        analysisSubmit(code),
-        executionSubmit(code).then((response) => setExecutedSource(response.executedSourceCode)),
+        analysisSubmit(code, language),
+        executionSubmit(code, language).then((response) => setExecutedSource(response.executedSourceCode)),
       ])
     } catch {
       // Each store already recorded its own error via its own submit() - see
@@ -161,15 +163,6 @@ function WorkspacePage() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
-
-  // The Analysis tab reads analysisStore.currentAnalysis - the same store slot
-  // AnalysisDetailPage used to write into (that page now uses local state
-  // instead, but this guard stays regardless: anything else that ever sets
-  // currentAnalysis outside a workspace submit shouldn't leak in here either).
-  // Clearing on mount means arriving at /analyze always starts clean.
-  useEffect(() => {
-    useAnalysisStore.getState().reset()
   }, [])
 
   // Track desktop vs mobile so the drag-resized width only applies on lg+
@@ -218,7 +211,8 @@ function WorkspacePage() {
     editorApiRef.current?.editor.getAction('editor.action.formatDocument')?.run()
   }
 
-  const handleExample = () => setCode(reconstructExamplePlainText())
+  const handleExample = () =>
+    setCode(language === 'python' ? PYTHON_EXAMPLE : reconstructExamplePlainText())
 
   const handleCopy = () => {
     const flash = (status, ms) => {
@@ -409,6 +403,8 @@ function WorkspacePage() {
             onCopy={handleCopy}
             copyStatus={copyStatus}
             disabled={isEditorLocked}
+            language={language}
+            onLanguageChange={setLanguage}
           />
           <div className="h-[55vh] min-h-0 lg:h-auto lg:flex-1">
             <WorkspaceEditor
@@ -417,6 +413,7 @@ function WorkspacePage() {
               onEditorMount={handleEditorMount}
               readOnly={isEditorLocked}
               highlightActive={isVisualizeTab}
+              language={language}
             />
           </div>
         </section>

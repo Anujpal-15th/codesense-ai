@@ -19,6 +19,6 @@ public class ExecutionController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ExecutionResponse create(@Valid @RequestBody ExecutionRequest request) {
-        return executionService.execute(request.sourceCode());
+        return executionService.execute(request.sourceCode(), request.language());
     }
 }

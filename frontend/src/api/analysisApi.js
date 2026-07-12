@@ -4,8 +4,8 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api',
 })
 
-export async function submitAnalysis(codeSnippet) {
-  const { data } = await api.post('/analyses', { codeSnippet })
+export async function submitAnalysis(codeSnippet, language = 'java') {
+  const { data } = await api.post('/analyses', { codeSnippet, language })
   return data
 }
 

@@ -24,6 +24,7 @@ public class ExecutionService {
     private final SolutionWrapperGenerator wrapperGenerator;
     private final SandboxRunner sandboxRunner;
     private final JavaTracer tracer;
+    private final PythonExecutionHandler pythonExecutionHandler;
     private final CodeSubmissionValidator submissionValidator;
     private final Duration readinessTimeout;
 
@@ -33,6 +34,7 @@ public class ExecutionService {
                              SolutionWrapperGenerator wrapperGenerator,
                              SandboxRunner sandboxRunner,
                              JavaTracer tracer,
+                             PythonExecutionHandler pythonExecutionHandler,
                              CodeSubmissionValidator submissionValidator,
                              @Value("${execution.sandbox.readiness-timeout-seconds}") long readinessTimeoutSeconds) {
         this.compiler = compiler;
@@ -41,15 +43,32 @@ public class ExecutionService {
         this.wrapperGenerator = wrapperGenerator;
         this.sandboxRunner = sandboxRunner;
         this.tracer = tracer;
+        this.pythonExecutionHandler = pythonExecutionHandler;
         this.submissionValidator = submissionValidator;
         this.readinessTimeout = Duration.ofSeconds(readinessTimeoutSeconds);
     }
 
-    public ExecutionResponse execute(String sourceCode) {
-        // Reject non-Java code and instruction-only payloads before we compile
-        // and spawn a JVM. Throws InvalidSubmissionException -> 400.
-        submissionValidator.validate(sourceCode);
+    /**
+     * @param language "java" or "python"; null/blank defaults to "java" so
+     *                 pre-language clients (and the regression suite's plain
+     *                 {@code {sourceCode}} payloads) keep working unchanged.
+     */
+    public ExecutionResponse execute(String sourceCode, String language) {
+        String lang = language == null || language.isBlank()
+                ? "java"
+                : language.trim().toLowerCase(java.util.Locale.ROOT);
 
+        // Reject wrong-language code and instruction-only payloads before we
+        // spawn anything. Throws InvalidSubmissionException -> 400.
+        submissionValidator.validate(sourceCode, lang);
+
+        if ("python".equals(lang)) {
+            return pythonExecutionHandler.execute(sourceCode);
+        }
+        return executeJava(sourceCode);
+    }
+
+    private ExecutionResponse executeJava(String sourceCode) {
         long tStart = System.nanoTime();
         Optional<String> existingEntryPoint = entryPointDetector.findEntryPointClass(sourceCode);
 
