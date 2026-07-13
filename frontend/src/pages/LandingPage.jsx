@@ -25,7 +25,7 @@ const STEPS = [
   {
     label: '01 — INPUT',
     title: 'Paste your function',
-    body: 'Java code — no project setup, no config, just the snippet you’re stuck on.',
+    body: 'Your code — no project setup, no config, just the snippet you’re stuck on.',
   },
   {
     label: '02 — ANALYZE',
