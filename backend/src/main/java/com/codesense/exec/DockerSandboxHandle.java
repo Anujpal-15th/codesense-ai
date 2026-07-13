@@ -52,10 +52,12 @@ class DockerSandboxHandle implements SandboxHandle {
     /**
      * Kills both the {@code docker run} client process and the container it
      * launched. {@code destroyForcibly()} on the client process alone is NOT
-     * reliably sufficient to guarantee the container itself dies - see
-     * CLAUDE.md for why this explicit {@code docker kill} backstop exists
-     * (unverified without Docker in the environment this was built in;
-     * killing an already-gone container is a harmless no-op either way).
+     * reliably sufficient to guarantee the container itself dies: {@code docker
+     * run} is a client attached to the Docker daemon, and killing that client
+     * doesn't necessarily stop the container the daemon is still running on its
+     * behalf - this explicit {@code docker kill} closes that gap directly.
+     * Unverified without Docker available in the environment this was built in;
+     * killing an already-gone container is a harmless no-op either way.
      */
     static void forceKill(Process dockerRunProcess, String containerName) {
         dockerRunProcess.destroyForcibly();

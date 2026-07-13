@@ -40,14 +40,16 @@ import java.util.regex.Pattern;
  * and egress is instead dropped by a host-level {@code DOCKER-USER} iptables
  * rule. That network and rule are a <b>deployment prerequisite</b> provisioned
  * once by {@code backend/docker/execution-sandbox/provision-sandbox-network.sh};
- * if they are absent the container has FULL internet access. See CLAUDE.md.
+ * if they are absent the container has FULL internet access.
  *
  * <p><b>Validated on Linux only.</b> This runner's isolation is designed for
  * and must be verified on the Linux deployment host. It is intentionally NOT
  * verified on the Windows Docker Desktop dev machine, where {@code DOCKER-USER}
  * iptables is not cleanly reachable (containers run in a managed VM); dev uses
- * {@code local-process} instead. See CLAUDE.md for the full rationale and the
- * on-host verification checklist.
+ * {@code local-process} instead. {@code provision-sandbox-network.sh} prints
+ * egress/port verification commands to run on the deployment host after
+ * provisioning - run them; this egress-isolation design has not been
+ * confirmed end-to-end on real Linux.
  */
 @Slf4j
 @Service
@@ -171,7 +173,7 @@ class DockerSandboxRunner implements SandboxRunner {
         command.add("--rm");
         // A normal user-defined bridge (so -p works); egress is dropped by the
         // host DOCKER-USER iptables rule provisioned alongside this network -
-        // NOT by these flags. See the class javadoc and CLAUDE.md.
+        // NOT by these flags. See the class javadoc above.
         command.add("--network");
         command.add(network);
         command.add("--memory");

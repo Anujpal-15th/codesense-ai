@@ -15,8 +15,7 @@
 # instead. Without this rule the container has FULL internet access.
 #
 # LINUX ONLY. On Docker Desktop (macOS/Windows) the daemon runs in a managed VM
-# where DOCKER-USER is not cleanly reachable; use local-process there. See
-# CLAUDE.md ("Docker execution sandbox — Linux deployment").
+# where DOCKER-USER is not cleanly reachable; use local-process there.
 #
 # Idempotent: safe to re-run. Requires root (docker + iptables).
 
