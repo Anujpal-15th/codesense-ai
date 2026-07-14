@@ -41,7 +41,11 @@ jobs:
           # Commands chained with && to ensure fail-fast: a broken git pull,
           # mvn package, or systemd restart will abort here and never restart
           # the service on a stale or half-built jar.
-          script: cd /home/azureuser/codesense-ai && git pull origin main && cd backend && mvn clean package -DskipTests -q && sudo systemctl restart codesense && sleep 25 && curl -f -o /dev/null http://localhost:8080/api/analyses
+          # fetch + reset --hard (not git pull): main's history is force-pushed
+          # after the pre-launch history rewrite, so the VM's local main diverges
+          # from origin and a merge-based pull would fail. reset --hard makes the
+          # VM's checkout exactly match origin/main regardless of divergence.
+          script: cd /home/azureuser/codesense-ai && git fetch origin main && git reset --hard origin/main && cd backend && mvn clean package -DskipTests -q && sudo systemctl restart codesense && sleep 25 && curl -f -o /dev/null http://localhost:8080/api/analyses
 
   deploy-frontend:
     name: Deploy frontend to Vercel

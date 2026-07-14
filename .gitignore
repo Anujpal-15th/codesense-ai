@@ -20,6 +20,12 @@ application-secrets.yaml
 # Claude Code session/tool state (personal, machine-specific - not app source)
 .claude/
 
+# Internal working notes / memory — kept locally, never committed (repo is public).
+# READMEs are intentionally NOT ignored (they're the public-facing docs).
+CLAUDE.md
+implementation-notes.md
+CHECKLIST.md
+
 # IDE
 .idea/
 *.iml
