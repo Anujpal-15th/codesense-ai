@@ -78,7 +78,11 @@ execution:
     # local-process mode; docker mode always runs python3 inside the image.
     executable: ${EXECUTION_PYTHON_EXECUTABLE:}
   limits:
-    max-steps: ${EXECUTION_MAX_STEPS:2000}
+    # Shared by both tracers (Java JDI and Python sys.settrace) - there's no
+    # per-language knob. Raised from 2000: complex DSA code with larger inputs
+    # (e.g. loops over hundreds of elements) was hitting the old cap and
+    # truncating mid-run.
+    max-steps: ${EXECUTION_MAX_STEPS:5000}
     max-stack-depth: ${EXECUTION_MAX_STACK_DEPTH:64}
     max-object-depth: ${EXECUTION_MAX_OBJECT_DEPTH:4}
     max-array-elements: ${EXECUTION_MAX_ARRAY_ELEMENTS:50}

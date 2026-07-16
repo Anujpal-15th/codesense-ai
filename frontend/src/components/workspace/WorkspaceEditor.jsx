@@ -10,6 +10,7 @@ function WorkspaceEditor({
   theme = 'vs',
   language = 'java',
   onEditorMount,
+  onReadOnlyEditAttempt,
   readOnly = false,
   highlightActive = true,
 }) {
@@ -25,6 +26,13 @@ function WorkspaceEditor({
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
 
+  // Same ref-indirection reasoning as readOnlyRef - handleMount only runs
+  // once (on editor mount), so the onDidAttemptReadOnlyEdit listener it
+  // registers must read the *current* callback through a ref, not close over
+  // whatever onReadOnlyEditAttempt was at mount time.
+  const onReadOnlyEditAttemptRef = useRef(onReadOnlyEditAttempt)
+  onReadOnlyEditAttemptRef.current = onReadOnlyEditAttempt
+
   const currentLine = useExecutionStore(selectCurrentLine)
 
   function handleMount(editor, monaco) {
@@ -32,6 +40,11 @@ function WorkspaceEditor({
     monacoRef.current = monaco
     decorationsRef.current = editor.createDecorationsCollection([])
     registerJavaFormatter(monaco)
+    // Fires when the user tries to type/paste into a read-only editor (e.g.
+    // pasting new code while Visualize is showing a locked trace) - used to
+    // draw attention to the read-only banner so the silently-ignored edit
+    // doesn't go unnoticed.
+    editor.onDidAttemptReadOnlyEdit(() => onReadOnlyEditAttemptRef.current?.())
     onEditorMount?.(editor, monaco)
   }
 

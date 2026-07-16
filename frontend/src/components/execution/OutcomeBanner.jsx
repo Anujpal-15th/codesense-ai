@@ -32,8 +32,11 @@ function OutcomeBanner() {
   if (trace.outcome === 'TRUNCATED' || trace.truncated) {
     return (
       <div className="rounded-lg border border-highlight-ink/30 bg-highlight-ink/10 p-4 text-highlight-ink">
-        Execution was stopped after capturing {trace.totalStepsCaptured} steps (the step limit). Steps captured so
-        far are still browsable below.
+        <strong className="font-semibold">
+          Trace capped at {trace.totalStepsCaptured} steps
+        </strong>{' '}
+        — showing the first {trace.totalStepsCaptured} steps only. The step limit was reached before execution
+        finished; steps captured so far are still browsable below.
       </div>
     )
   }
