@@ -70,6 +70,15 @@ def main():
     SKIP_TYPES = (types.ModuleType, types.FunctionType, types.BuiltinFunctionType,
                   types.MethodType, type)
 
+    # Typing-machinery internals (typing.List, typing.Optional, abc.ABCMeta
+    # plumbing, etc.) end up bound as ordinary module-level locals whenever
+    # user code does `from typing import List, Optional` - SKIP_TYPES doesn't
+    # catch them (they're not `type` instances, they're typing._GenericAlias/
+    # _SpecialForm objects), so without this they'd show up as noisy
+    # "_SpecialGenericAlias"/"_SpecialForm" values in the Variables panel.
+    # They're plumbing, not program state - never meaningful to a learner.
+    EXCLUDED_VALUE_MODULES = {"typing", "abc", "_collections_abc"}
+
     def ser(v, depth, seen):
         if v is None:
             return {"valueKind": "null"}
@@ -139,6 +148,8 @@ def main():
             if name.startswith("__"):
                 continue
             if isinstance(val, SKIP_TYPES):
+                continue
+            if type(val).__module__ in EXCLUDED_VALUE_MODULES:
                 continue
             out.append({"name": name, "declaredType": type(val).__name__,
                         "value": ser(val, max_depth, frozenset())})

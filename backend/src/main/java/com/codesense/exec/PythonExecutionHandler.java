@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -138,9 +139,12 @@ public class PythonExecutionHandler {
     }
 
     // ------------------------------------------------------------------
-    // Wrapping: bare function definitions with no top-level call get a
+    // Wrapping: bare function definitions or a bare LeetCode-style
+    // "class Solution: def method(self, ...):" with no top-level call get a
     // deterministic driver appended, mirroring DeterministicWrapperGenerator's
-    // spirit on the Java side (no LLM involved).
+    // spirit on the Java side (no LLM involved). The class-method path is
+    // Python's answer to Java's instance-method handling there - Java finds
+    // it via brace matching, Python via indentation (no braces to match on).
     // ------------------------------------------------------------------
 
     private WrapResult wrapIfNeeded(String source) {
@@ -151,9 +155,14 @@ public class PythonExecutionHandler {
         if (call.isEmpty()) {
             return new WrapResult(source, false);
         }
-        String driver = source.stripTrailing() + "\n\n\nif __name__ == \"__main__\":\n    print("
-                + call.get().expression() + ")\n";
-        return new WrapResult(driver, true);
+        GeneratedCall generated = call.get();
+        StringBuilder driver = new StringBuilder(source.stripTrailing())
+                .append("\n\n\nif __name__ == \"__main__\":\n");
+        if (generated.setup() != null) {
+            driver.append("    ").append(generated.setup()).append("\n");
+        }
+        driver.append("    print(").append(generated.expression()).append(")\n");
+        return new WrapResult(driver.toString(), true);
     }
 
     /**
@@ -193,10 +202,22 @@ public class PythonExecutionHandler {
         return false;
     }
 
+    /** Tries a bare module-level function first (the common non-LeetCode
+     * case), then a class-based "Solution" method. The two are mutually
+     * exclusive by construction - {@link #DEF_PATTERN} is anchored to column
+     * 0, so it can never match a method indented inside a class. */
+    private Optional<GeneratedCall> synthesizeCall(String source) {
+        Optional<GeneratedCall> functionCall = synthesizeModuleFunctionCall(source);
+        if (functionCall.isPresent()) {
+            return functionCall;
+        }
+        return synthesizeClassMethodCall(source);
+    }
+
     /** Synthesizes a call to the first module-level def using small ints for
      * each positional parameter (3, 4, 5, ...). Skips *args/**kwargs and
      * parameters with defaults - they don't need arguments. */
-    private Optional<GeneratedCall> synthesizeCall(String source) {
+    private Optional<GeneratedCall> synthesizeModuleFunctionCall(String source) {
         Matcher m = DEF_PATTERN.matcher(source);
         if (!m.find()) {
             return Optional.empty();
@@ -219,6 +240,235 @@ public class PythonExecutionHandler {
             }
         }
         return Optional.of(new GeneratedCall(name + "(" + String.join(", ", args) + ")"));
+    }
+
+    // ------------------------------------------------------------------
+    // Class-method wrapping: "class Solution: def method(self, ...):" with
+    // no top-level driver. Python's analogue of DeterministicWrapperGenerator's
+    // instance-method handling, done via indentation scanning since Python
+    // has no braces to match on.
+    // ------------------------------------------------------------------
+
+    private static final Pattern CLASS_HEADER_PATTERN =
+            Pattern.compile("^class\\s+(\\w+)\\s*(?:\\([^)]*\\))?\\s*:", Pattern.MULTILINE);
+    private static final Pattern METHOD_DEF_LINE_PATTERN =
+            Pattern.compile("^def\\s+(\\w+)\\s*\\(([^)]*)\\)\\s*(?:->\\s*[^:]+)?\\s*:");
+    // Data-structure helper classes (ListNode/TreeNode/Node) are never the
+    // entry point themselves - skip past them to find the real Solution class.
+    private static final Set<String> HELPER_CLASS_NAMES = Set.of("ListNode", "TreeNode", "Node");
+
+    private static final Pattern OPTIONAL_TYPE = Pattern.compile("^Optional\\[(.+)]$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LIST_LIST_INT_TYPE = Pattern.compile("^List\\[List\\[int]]$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LIST_INT_TYPE = Pattern.compile("^List\\[int]$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LIST_STR_TYPE = Pattern.compile("^List\\[str]$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LIST_FLOAT_TYPE = Pattern.compile("^List\\[float]$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LIST_OF_LISTNODE_TYPE =
+            Pattern.compile("^List\\[(?:Optional\\[ListNode]|ListNode)]$", Pattern.CASE_INSENSITIVE);
+
+    private record PyMethod(String name, String rawParams) {
+    }
+
+    /**
+     * Requires the class to have exactly one candidate method (non-{@code
+     * __init__}, not leading-underscore) - the LeetCode convention of a
+     * single public entry point. Ambiguous (0 or 2+ candidates) or a
+     * parameter type this handler doesn't recognize both fall through to the
+     * next class (there's usually only one), and ultimately to "no wrap" if
+     * nothing matches - there's no LLM safety net for Python the way Java's
+     * deterministic wrapper has, so staying conservative here matters more.
+     */
+    private Optional<GeneratedCall> synthesizeClassMethodCall(String source) {
+        String[] lines = source.split("\n", -1);
+        Matcher classMatcher = CLASS_HEADER_PATTERN.matcher(source);
+        while (classMatcher.find()) {
+            String className = classMatcher.group(1);
+            if (HELPER_CLASS_NAMES.contains(className)) {
+                continue;
+            }
+            int classLine = lineIndexAt(source, classMatcher.start());
+            Optional<PyMethod> method = findSolePublicMethod(lines, classLine);
+            if (method.isEmpty()) {
+                continue;
+            }
+            Optional<String> args = buildArgs(method.get());
+            if (args.isEmpty()) {
+                continue;
+            }
+            String varName = Character.toLowerCase(className.charAt(0)) + className.substring(1);
+            String setup = varName + " = " + className + "()";
+            String expr = varName + "." + method.get().name() + "(" + args.get() + ")";
+            return Optional.of(new GeneratedCall(expr, setup));
+        }
+        return Optional.empty();
+    }
+
+    private int lineIndexAt(String source, int charOffset) {
+        int line = 0;
+        for (int i = 0; i < charOffset; i++) {
+            if (source.charAt(i) == '\n') {
+                line++;
+            }
+        }
+        return line;
+    }
+
+    /**
+     * Walks lines after the class header to find its direct methods - no
+     * braces to match, so "direct member of this class" is determined by
+     * indentation: the first non-blank line after the header establishes the
+     * body's indent level, and only lines at exactly that indent are
+     * considered (deeper means nested inside a method; shallower means the
+     * class body has ended). Triple-quoted docstrings are skipped so a
+     * mentioned "def" inside one can't be mistaken for a real method.
+     */
+    private Optional<PyMethod> findSolePublicMethod(String[] lines, int classLine) {
+        Integer methodIndent = null;
+        boolean inTripleQuote = false;
+        String tripleDelim = null;
+        List<PyMethod> found = new ArrayList<>();
+        for (int i = classLine + 1; i < lines.length; i++) {
+            String line = lines[i];
+            String stripped = line.strip();
+            if (inTripleQuote) {
+                if (stripped.contains(tripleDelim)) {
+                    inTripleQuote = false;
+                }
+                continue;
+            }
+            if (stripped.isEmpty()) {
+                continue;
+            }
+            int indent = line.length() - line.stripLeading().length();
+            if (methodIndent == null) {
+                methodIndent = indent;
+            }
+            if (indent < methodIndent) {
+                break; // dedented out of the class body
+            }
+            if (stripped.startsWith("\"\"\"") || stripped.startsWith("'''")) {
+                String delim = stripped.substring(0, 3);
+                if (!(stripped.length() >= 6 && stripped.endsWith(delim))) {
+                    inTripleQuote = true;
+                    tripleDelim = delim;
+                }
+                continue;
+            }
+            if (indent != methodIndent) {
+                continue; // nested deeper than the class's direct members
+            }
+            Matcher dm = METHOD_DEF_LINE_PATTERN.matcher(stripped);
+            if (dm.find()) {
+                String name = dm.group(1);
+                if (!name.equals("__init__") && !name.startsWith("_")) {
+                    found.add(new PyMethod(name, dm.group(2)));
+                }
+            }
+        }
+        return found.size() == 1 ? Optional.of(found.get(0)) : Optional.empty();
+    }
+
+    /** Builds the comma-joined argument list for a method call, skipping
+     * {@code self}/{@code cls}, {@code *args}/{@code **kwargs}, and
+     * defaulted params (same convention as the module-function path).
+     * Returns empty if any remaining parameter's type annotation isn't one
+     * this handler recognizes. */
+    private Optional<String> buildArgs(PyMethod method) {
+        List<String> args = new ArrayList<>();
+        int nextInt = 3;
+        for (String rawParam : splitTopLevelPy(method.rawParams(), ',')) {
+            String p = rawParam.strip();
+            if (p.isEmpty() || p.startsWith("*") || p.contains("=")) {
+                continue;
+            }
+            if (p.equals("self") || p.equals("cls")) {
+                continue;
+            }
+            int colon = p.indexOf(':');
+            String type = colon >= 0 ? p.substring(colon + 1).strip().replaceAll("\\s+", "") : null;
+            Optional<String> sample = type == null
+                    ? Optional.of(String.valueOf(nextInt++))
+                    : pythonSampleArgFor(type);
+            if (sample.isEmpty()) {
+                return Optional.empty();
+            }
+            args.add(sample.get());
+        }
+        return Optional.of(String.join(", ", args));
+    }
+
+    /** Type-aware sample argument synthesis for the common LeetCode parameter
+     * shapes. Recurses into {@code Optional[X]} (always synthesizes a real X,
+     * never None - a None argument would make most solutions do nothing,
+     * exactly the "no output" bug this whole feature exists to fix). */
+    private Optional<String> pythonSampleArgFor(String type) {
+        Matcher optional = OPTIONAL_TYPE.matcher(type);
+        if (optional.matches()) {
+            return pythonSampleArgFor(optional.group(1));
+        }
+        if (LIST_LIST_INT_TYPE.matcher(type).matches()) {
+            return Optional.of("[[1, 2], [3, 4], [5, 6]]");
+        }
+        if (LIST_INT_TYPE.matcher(type).matches()) {
+            return Optional.of("[4, 2, 7, 1, 9]");
+        }
+        if (LIST_STR_TYPE.matcher(type).matches()) {
+            return Optional.of("[\"alpha\", \"beta\", \"gamma\"]");
+        }
+        if (LIST_FLOAT_TYPE.matcher(type).matches()) {
+            return Optional.of("[4.0, 2.0, 7.0]");
+        }
+        if (LIST_OF_LISTNODE_TYPE.matcher(type).matches()) {
+            return Optional.of("[" + buildLinkedListExpr(new int[]{1, 4, 5}) + ", "
+                    + buildLinkedListExpr(new int[]{1, 3, 4}) + ", "
+                    + buildLinkedListExpr(new int[]{2, 6}) + "]");
+        }
+        return switch (type) {
+            case "int" -> Optional.of("7");
+            case "float", "double" -> Optional.of("7.0");
+            case "bool" -> Optional.of("True");
+            case "str" -> Optional.of("\"abc\"");
+            case "ListNode" -> Optional.of(buildLinkedListExpr(new int[]{1, 2, 3}));
+            case "TreeNode" -> Optional.of(buildTreeExpr());
+            default -> Optional.empty();
+        };
+    }
+
+    /** Builds a nested-constructor linked list expression, e.g.
+     * {@code ListNode(1, ListNode(2, ListNode(3, None)))} - no helper
+     * function needed the way Java's buildList() is, since Python allows
+     * arbitrarily nested expressions inline. */
+    private String buildLinkedListExpr(int[] values) {
+        String expr = "None";
+        for (int i = values.length - 1; i >= 0; i--) {
+            expr = "ListNode(" + values[i] + ", " + expr + ")";
+        }
+        return expr;
+    }
+
+    private String buildTreeExpr() {
+        return "TreeNode(5, TreeNode(3, TreeNode(1), TreeNode(4)), TreeNode(8))";
+    }
+
+    /** Bracket-depth-aware comma split (Python type hints use square brackets
+     * for generics, e.g. {@code List[int]}) - a plain split(",") would break
+     * on {@code lists: List[Optional[ListNode]]}. */
+    private List<String> splitTopLevelPy(String s, char delimiter) {
+        List<String> parts = new ArrayList<>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '[' || c == '(') {
+                depth++;
+            } else if (c == ']' || c == ')') {
+                depth--;
+            } else if (c == delimiter && depth == 0) {
+                parts.add(s.substring(start, i));
+                start = i + 1;
+            }
+        }
+        parts.add(s.substring(start));
+        return parts;
     }
 
     // ------------------------------------------------------------------
@@ -421,7 +671,13 @@ public class PythonExecutionHandler {
     private record WrapResult(String source, boolean wrapped) {
     }
 
-    private record GeneratedCall(String expression) {
+    /** @param setup a statement to run before the call (e.g. instantiating
+     *                the Solution class) - null when the call needs none
+     *                (the bare module-function case). */
+    private record GeneratedCall(String expression, String setup) {
+        GeneratedCall(String expression) {
+            this(expression, null);
+        }
     }
 
     private record ProcessResult(String stdout, String stderr, boolean hardKilled,
