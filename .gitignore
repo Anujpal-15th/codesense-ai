@@ -17,10 +17,10 @@ application-secrets.yml
 application-secrets.yaml
 *-local.properties
 
-# Claude Code session/tool state (personal, machine-specific - not app source)
+# Local editor/tooling state (personal, machine-specific - not app source)
 .claude/
 
-# Internal working notes / memory — kept locally, never committed (repo is public).
+# Internal working notes - kept locally, never committed (repo is public).
 # READMEs are intentionally NOT ignored (they're the public-facing docs).
 CLAUDE.md
 implementation-notes.md
