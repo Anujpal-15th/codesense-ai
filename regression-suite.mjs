@@ -20,6 +20,8 @@
  *              timeAnyOf / spaceAnyOf - normalized complexity must equal one of these
  *                                       (null = don't assert; too unstable to pin)
  *   execution: status, outcome, wasWrapped, consoleContains, errorContains
+ *
+ * Cases are Java unless they set `language: 'python'`.
  */
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:8080';
@@ -450,6 +452,75 @@ public class App {
 class Solution { public int length(Interval a) { return a.end - a.start; } }`,
     expect: { status: 201, outcome: 'NORMAL', wasWrapped: true },
   },
+  // ---- Execution: Python wrapper paths ----
+  // The typing preamble is invisible on a Python 3.14 dev box (PEP 649 lazy
+  // annotations never evaluate List[int]); these only fail on <= 3.13, which
+  // is what the Alpine python3 in the sandbox image ships. Assert on console
+  // output, not just outcome - the original bug produced NORMAL-looking runs
+  // with an empty Result panel.
+  {
+    id: 'exec-py-leetcode-class-no-typing-import',
+    flow: 'execution',
+    language: 'python',
+    name: 'Python: bare LeetCode class, List[int] with NO typing import (NameError, 7 steps, empty Result)',
+    source: `class Solution:
+    def candy(self, ratings: List[int]) -> int:
+        n = len(ratings)
+        candies = [1] * n
+        for i in range(1, n):
+            if ratings[i] > ratings[i - 1]:
+                candies[i] = candies[i - 1] + 1
+        for i in range(n - 2, -1, -1):
+            if ratings[i] > ratings[i + 1]:
+                candies[i] = max(candies[i], candies[i + 1] + 1)
+        return sum(candies)`,
+    expect: { status: 201, outcome: 'NORMAL', wasWrapped: true, consoleContains: '8' },
+  },
+  {
+    id: 'exec-py-user-main-not-wrapped',
+    flow: 'execution',
+    language: 'python',
+    name: 'Python: user brought their own __main__ - no driver added, preamble still applied',
+    source: `class Solution:
+    def candy(self, ratings: List[int]) -> int:
+        n = len(ratings)
+        candies = [1] * n
+        for i in range(1, n):
+            if ratings[i] > ratings[i - 1]:
+                candies[i] = candies[i - 1] + 1
+        for i in range(n - 2, -1, -1):
+            if ratings[i] > ratings[i + 1]:
+                candies[i] = max(candies[i], candies[i + 1] + 1)
+        return sum(candies)
+
+
+if __name__ == "__main__":
+    print(Solution().candy([1, 0, 2]))`,
+    expect: { status: 201, outcome: 'NORMAL', wasWrapped: false, consoleContains: '5' },
+  },
+  {
+    id: 'exec-py-existing-typing-import',
+    flow: 'execution',
+    language: 'python',
+    name: 'Python: existing typing import is honored, not duplicated',
+    source: `from typing import List
+
+
+class Solution:
+    def total(self, nums: List[int]) -> int:
+        return sum(nums)`,
+    expect: { status: 201, outcome: 'NORMAL', wasWrapped: true, consoleContains: '23' },
+  },
+  {
+    id: 'exec-py-no-typing-at-all',
+    flow: 'execution',
+    language: 'python',
+    name: 'Python: plain module function - no preamble injected, still wrapped',
+    source: `def add(a, b):
+    return a + b`,
+    expect: { status: 201, outcome: 'NORMAL', wasWrapped: true, consoleContains: '7' },
+  },
+
   {
     id: 'exec-compile-error',
     flow: 'execution',
@@ -626,7 +697,7 @@ async function main() {
       const { status, json } =
         c.flow === 'analysis'
           ? await post('/api/analyses', { codeSnippet: c.source })
-          : await post('/api/executions', { sourceCode: c.source });
+          : await post('/api/executions', { sourceCode: c.source, language: c.language ?? 'java' });
       failures = c.flow === 'analysis' ? checkAnalysis(c.expect, status, json) : checkExecution(c.expect, status, json);
       actual = summarizeActual(c.flow, status, json);
     } catch (e) {

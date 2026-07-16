@@ -149,11 +149,14 @@ public class PythonExecutionHandler {
 
     private WrapResult wrapIfNeeded(String source) {
         if (hasTopLevelStatement(source)) {
-            return new WrapResult(source, false);
+            // User brought their own entry point - no driver. The typing
+            // preamble still applies: the missing import breaks the class body
+            // itself, long before their __main__ block would run.
+            return new WrapResult(ensureTypingImports(source), false);
         }
         Optional<GeneratedCall> call = synthesizeCall(source);
         if (call.isEmpty()) {
-            return new WrapResult(source, false);
+            return new WrapResult(ensureTypingImports(source), false);
         }
         GeneratedCall generated = call.get();
         StringBuilder driver = new StringBuilder(source.stripTrailing())
@@ -162,7 +165,45 @@ public class PythonExecutionHandler {
             driver.append("    ").append(generated.setup()).append("\n");
         }
         driver.append("    print(").append(generated.expression()).append(")\n");
-        return new WrapResult(driver.toString(), true);
+        return new WrapResult(ensureTypingImports(driver.toString()), true);
+    }
+
+    /** Exactly the names {@link #TYPING_PREAMBLE} binds - detecting a generic
+     * we don't then import would leave the same NameError in place. Qualified
+     * uses (typing.List[int]) are excluded via the lookbehind: those already
+     * resolve through an `import typing` the guard below honors. */
+    private static final Pattern TYPING_GENERIC_USE =
+            Pattern.compile("(?<![\\w.])(?:List|Optional|Dict|Tuple|Set)\\s*\\[");
+    private static final Pattern EXISTING_TYPING_IMPORT =
+            Pattern.compile("^\\s*(?:from\\s+typing\\s+import|import\\s+typing)\\b", Pattern.MULTILINE);
+    private static final String TYPING_PREAMBLE =
+            "from typing import List, Optional, Dict, Tuple, Set";
+
+    /**
+     * Prepends the typing preamble when the source subscripts a typing generic
+     * ({@code List[int]}, {@code Optional[TreeNode]}) without importing it.
+     * LeetCode's editor supplies these names implicitly, so pasted solutions
+     * almost never carry the import.
+     *
+     * <p>Why this is a hard failure rather than a cosmetic one: on Python
+     * <= 3.13 a parameter annotation is evaluated at {@code def} time, i.e.
+     * while the class body executes - so the NameError fires during module
+     * import, before any driver can call the method. That single fault is what
+     * produced all three reported symptoms (no output, ~7 steps, NameError).
+     * It does NOT reproduce on this dev box: Python 3.14's PEP 649 lazy
+     * annotations never evaluate the annotation, so the same snippet runs
+     * clean here and only fails on the Alpine python3 in the sandbox image.
+     *
+     * <p>Deliberately hands off to any source that already touches typing -
+     * a partial import ({@code from typing import List} while using
+     * {@code Optional}) is left alone rather than second-guessed.
+     */
+    private String ensureTypingImports(String source) {
+        if (!TYPING_GENERIC_USE.matcher(source).find()
+                || EXISTING_TYPING_IMPORT.matcher(source).find()) {
+            return source;
+        }
+        return TYPING_PREAMBLE + "\n" + source;
     }
 
     /**
