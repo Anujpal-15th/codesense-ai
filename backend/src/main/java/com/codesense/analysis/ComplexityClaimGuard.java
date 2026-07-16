@@ -48,8 +48,12 @@ class ComplexityClaimGuard {
     private static final Pattern HASH_PRESENT = Pattern.compile(
             "\\b(Map|HashMap|Set|HashSet|Hashtable|TreeMap|TreeSet|LinkedHashMap|LinkedHashSet)\\b"
                     + "|\\.put\\(|\\.containsKey\\(|\\.getOrDefault\\(");
+    private static final Pattern HASH_PRESENT_PY = Pattern.compile(
+            "\\{|\\bdict\\b|\\bset\\b|\\bdefaultdict\\b|\\bCounter\\b|\\bOrderedDict\\b");
     private static final Pattern SORT_CALL_PRESENT = Pattern.compile(
             "\\bArrays\\.sort\\(|\\bCollections\\.sort\\(|\\.sort\\(");
+    // Python: list.sort() (already covered by `.sort(`) or the sorted() builtin.
+    private static final Pattern SORT_CALL_PRESENT_PY = Pattern.compile("\\.sort\\(|\\bsorted\\s*\\(");
 
     /**
      * @return a verdict; {@code incoherent() == true} means the improvement
@@ -58,7 +62,7 @@ class ComplexityClaimGuard {
      * unverifiable (which this guard does not touch, on purpose).
      */
     ComplexityClaimVerdict check(String code, String currentTime, String suggestedTime,
-                                 boolean isOptimal, String efficiencySuggestions) {
+                                 boolean isOptimal, String efficiencySuggestions, String language) {
         // isOptimal == true: suggestedTimeComplexity is a confirmation that
         // equals the current complexity, and efficiencySuggestions is praise -
         // there is no improvement claim to scrutinize. Never fire.
@@ -77,25 +81,26 @@ class ComplexityClaimGuard {
         }
 
         // (2) The advice names a technique the code already uses.
-        if (suggestsAlreadyPresentTechnique(code, efficiencySuggestions)) {
+        if (suggestsAlreadyPresentTechnique(code, efficiencySuggestions, language)) {
             return ComplexityClaimVerdict.incoherent("suggested technique already present in code");
         }
 
         return ComplexityClaimVerdict.ok();
     }
 
-    private boolean suggestsAlreadyPresentTechnique(String code, String suggestion) {
+    private boolean suggestsAlreadyPresentTechnique(String code, String suggestion, String language) {
         if (code == null || suggestion == null) {
             return false;
         }
+        boolean python = "python".equalsIgnoreCase(language);
         String s = suggestion.toLowerCase(Locale.ROOT);
-        if (s.contains("hash") && HASH_PRESENT.matcher(code).find()) {
+        if (s.contains("hash") && (python ? HASH_PRESENT_PY : HASH_PRESENT).matcher(code).find()) {
             return true;
         }
         // Only a real sort *call* counts as "sorting already present" - a manual
         // comparison sort (e.g. bubble sort) contains no sort call, so advising
         // "use mergesort" on it is NOT self-contradictory and must pass through.
-        if (s.contains("sort") && SORT_CALL_PRESENT.matcher(code).find()) {
+        if (s.contains("sort") && (python ? SORT_CALL_PRESENT_PY : SORT_CALL_PRESENT).matcher(code).find()) {
             return true;
         }
         return false;

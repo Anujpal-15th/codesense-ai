@@ -56,7 +56,7 @@ public class AnalysisService {
         AnalysisResult result = llmClient.analyze(llmInput);
 
         long guardStart = System.nanoTime();
-        boolean patternSupported = patternEvidenceGuard.isSupported(codeSnippet, result.pattern());
+        boolean patternSupported = patternEvidenceGuard.isSupported(codeSnippet, result.pattern(), lang);
         long guardMicros = (System.nanoTime() - guardStart) / 1_000;
         log.info("Pattern evidence guard: label='{}' supported={} cost={}us",
                 result.pattern(), patternSupported, guardMicros);
@@ -73,7 +73,7 @@ public class AnalysisService {
         long claimStart = System.nanoTime();
         ComplexityClaimGuard.ComplexityClaimVerdict claimVerdict = complexityClaimGuard.check(
                 codeSnippet, result.timeComplexity(), result.suggestedTimeComplexity(),
-                result.isOptimal(), result.efficiencySuggestions());
+                result.isOptimal(), result.efficiencySuggestions(), lang);
         long claimMicros = (System.nanoTime() - claimStart) / 1_000;
         log.info("Complexity claim guard: incoherent={} reason={} cost={}us",
                 claimVerdict.incoherent(), claimVerdict.reason(), claimMicros);
