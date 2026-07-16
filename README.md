@@ -78,3 +78,10 @@ Runs on `http://localhost:5173` and expects the backend at `http://localhost:808
 ## Screenshots
 
 _(placeholder — add screenshots of the Workspace, Analysis, and Visualize views here)_
+
+## Author
+
+**Anuj Pal** — [@Anujpal-15th](https://github.com/Anujpal-15th)
+
+For a deeper walkthrough of the architecture, execution engine, design decisions, and how
+to extend or deploy the project, see [memory.md](memory.md).
