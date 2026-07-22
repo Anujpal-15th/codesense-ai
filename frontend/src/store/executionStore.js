@@ -16,6 +16,13 @@ export const useExecutionStore = create((set, get) => ({
   trace: null,
   createdAt: null,
   wasWrapped: false,
+  // The exact source this trace's line numbers refer to, frozen at the moment
+  // the trace arrived - never touched again after that, unlike
+  // workspaceStore's `executedSource` (which the user can go on editing on the
+  // Visualize tab). Without this separate frozen copy, ExecutionNarrative's
+  // line lookup would start showing the WRONG line of code the instant the
+  // user edited the source shown alongside an already-captured trace.
+  tracedSource: null,
 
   currentStepIndex: 0,
   isPlaying: false,
@@ -28,6 +35,7 @@ export const useExecutionStore = create((set, get) => ({
       trace: null,
       createdAt: null,
       wasWrapped: false,
+      tracedSource: null,
       currentStepIndex: 0,
       isPlaying: false,
     })
@@ -37,6 +45,7 @@ export const useExecutionStore = create((set, get) => ({
         trace: response.trace,
         createdAt: response.createdAt,
         wasWrapped: response.wasWrapped,
+        tracedSource: response.executedSourceCode,
         isLoading: false,
         currentStepIndex: 0,
       })
@@ -98,6 +107,7 @@ export const useExecutionStore = create((set, get) => ({
       trace: null,
       createdAt: null,
       wasWrapped: false,
+      tracedSource: null,
       currentStepIndex: 0,
       error: null,
     })

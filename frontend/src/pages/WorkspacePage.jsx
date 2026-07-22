@@ -370,7 +370,7 @@ function WorkspacePage() {
                 <div className="space-y-4">
                   <OutcomeBanner />
                   <RecursionBadge />
-                  <ExecutionNarrative code={editorValue} />
+                  <ExecutionNarrative />
                   <CallStackPanel />
                   <VariablesPanel />
                   <div className="rounded-lg border border-line bg-paper-raised p-4">

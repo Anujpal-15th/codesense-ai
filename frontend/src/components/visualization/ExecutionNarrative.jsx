@@ -1,6 +1,14 @@
 import { selectCurrentFrame, selectCurrentStep, useExecutionStore } from '../../store/executionStore'
 import ValueRenderer from './ValueRenderer'
 
+// Selects tracedSource - not workspaceStore's executedSource - deliberately.
+// tracedSource is frozen at the moment the trace arrived, so this narration
+// keeps quoting the line that actually ran even if the user goes on editing
+// the code shown alongside it on the Visualize tab.
+function selectTracedSource(state) {
+  return state.tracedSource
+}
+
 function formatLiteral(value) {
   if (!value) return '?'
   switch (value.valueKind) {
@@ -50,13 +58,14 @@ function buildNarration(step, frame, code) {
   return null
 }
 
-function ExecutionNarrative({ code }) {
+function ExecutionNarrative() {
   const step = useExecutionStore(selectCurrentStep)
   const frame = useExecutionStore(selectCurrentFrame)
+  const tracedSource = useExecutionStore(selectTracedSource)
 
   if (!step || !frame) return null
 
-  const narration = buildNarration(step, frame, code)
+  const narration = buildNarration(step, frame, tracedSource)
   const showReturnValue = step.eventType === 'METHOD_EXIT' && step.returnValue != null
 
   return (
