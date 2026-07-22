@@ -1,5 +1,6 @@
 import { selectCurrentFrame, selectCurrentStep, useExecutionStore } from '../../store/executionStore'
 import ValueRenderer from './ValueRenderer'
+import { useStepChanges } from './useStepChanges'
 
 // Selects tracedSource - not workspaceStore's executedSource - deliberately.
 // tracedSource is frozen at the moment the trace arrived, so this narration
@@ -7,6 +8,35 @@ import ValueRenderer from './ValueRenderer'
 // the code shown alongside it on the Visualize tab.
 function selectTracedSource(state) {
   return state.tracedSource
+}
+
+// A bare identifier - "sum", "right", "this" - never "arr[3]", "map#k",
+// "obj.field". Matches stepDiff's path grammar for a frame-local variable
+// exactly (see fieldPath/indexPath/mapEntryPath/setElemPath in stepDiff.js) -
+// deliberately scoped to top-level locals for this pass, not every nested
+// field/element the diff can theoretically point at.
+const TOP_LEVEL_VAR_PATH = /^[A-Za-z_$][\w$]*$/
+
+function resolveTopLevelVar(frame, name) {
+  if (name === 'this') return frame.thisObject?.value
+  return frame.localVariables.find((v) => v.name === name)?.value
+}
+
+/**
+ * Turns the step's already-computed value-change set (the same data that
+ * drives the flash animations elsewhere) into plain-English deltas - "sum =
+ * 8, right = 3" - instead of asking the model to guess at what a line of
+ * arbitrary code "means". Real, already-verified data; never fabricated.
+ */
+function buildChangeSummary(frame, changes) {
+  if (!frame || !changes) return []
+  const names = [...changes.changed].filter((p) => TOP_LEVEL_VAR_PATH.test(p))
+  return names
+    .map((name) => {
+      const value = resolveTopLevelVar(frame, name)
+      return value ? `${name} = ${formatLiteral(value)}` : null
+    })
+    .filter(Boolean)
 }
 
 function formatLiteral(value) {
@@ -62,11 +92,13 @@ function ExecutionNarrative() {
   const step = useExecutionStore(selectCurrentStep)
   const frame = useExecutionStore(selectCurrentFrame)
   const tracedSource = useExecutionStore(selectTracedSource)
+  const changes = useStepChanges()
 
   if (!step || !frame) return null
 
   const narration = buildNarration(step, frame, tracedSource)
   const showReturnValue = step.eventType === 'METHOD_EXIT' && step.returnValue != null
+  const changeSummary = buildChangeSummary(frame, changes)
 
   return (
     <div className="rounded-lg border border-line bg-paper-raised p-4">
@@ -75,6 +107,11 @@ function ExecutionNarrative() {
       </h2>
       <div className="space-y-3">
         <p className="font-mono text-sm text-ink">{narration?.text}</p>
+        {changeSummary.length > 0 && (
+          <p className="font-mono text-xs text-ink-soft">
+            <span className="text-ink-soft/70">Since last step:</span> {changeSummary.join(', ')}
+          </p>
+        )}
         {showReturnValue && (
           <div className="space-y-1">
             <div className="font-mono text-xs text-ink-soft">Returned</div>
