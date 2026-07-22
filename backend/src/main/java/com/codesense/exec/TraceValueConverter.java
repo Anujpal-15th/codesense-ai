@@ -37,6 +37,23 @@ import java.util.Set;
  * <p>Treeified HashMap bins are handled transparently: HashMap keeps the
  * {@code next} linkage even in {@code TreeNode} bins (for untreeify), so walking
  * each bucket's {@code next} chain yields all entries regardless of treeification.
+ *
+ * <p><b>Two separate depth budgets, not one.</b> {@code depth} bounds genuine
+ * object-nesting (an object containing an unrelated object containing another
+ * unrelated object...) and stays intentionally tight ({@link TraceLimits#maxObjectDepth()},
+ * default 4) - that shape is rare and a deep one is usually a real bug being
+ * chased. {@code chainLength} bounds a <em>same-type self-referential</em> edge -
+ * a {@code ListNode.next} pointing to another {@code ListNode}, a
+ * {@code TreeNode.left}/{@code right} pointing to another {@code TreeNode} -
+ * which is structurally just a longer sequence, not deeper nesting, so it
+ * shares {@link TraceLimits#maxArrayElements()} (the same "how many" budget
+ * arrays/collections already get) instead of the tight object-depth one.
+ * Without this split, a completely ordinary 6-7 node linked list or a modest
+ * BST would have its tail silently truncated, because walking {@code next}/
+ * {@code left}/{@code right} used to consume the same narrow budget meant for
+ * unrelated nested objects. {@link #convertRawObject} is the only place that
+ * decides which budget an edge draws from - every other recursion site just
+ * threads {@code chainLength} through unchanged.
  */
 class TraceValueConverter {
 
@@ -47,14 +64,14 @@ class TraceValueConverter {
     }
 
     TraceValue convert(Value value) {
-        return convert(value, 0, new HashSet<>());
+        return convert(value, 0, 0, new HashSet<>());
     }
 
-    private TraceValue convert(Value value, int depth, Set<Long> inProgress) {
+    private TraceValue convert(Value value, int depth, int chainLength, Set<Long> inProgress) {
         if (value == null) {
             return new TraceValue.NullVal();
         }
-        if (depth > limits.maxObjectDepth()) {
+        if (depth > limits.maxObjectDepth() || chainLength > limits.maxArrayElements()) {
             return new TraceValue.Truncated("max-depth-exceeded");
         }
         if (value instanceof PrimitiveValue pv) {
@@ -66,21 +83,21 @@ class TraceValueConverter {
             return new TraceValue.StringVal(tooLong ? s.substring(0, limits.maxStringLength()) : s, tooLong);
         }
         if (value instanceof ArrayReference ar) {
-            return convertArray(ar, depth, inProgress);
+            return convertArray(ar, depth, chainLength, inProgress);
         }
         if (value instanceof ObjectReference or) {
-            return convertObject(or, depth, inProgress);
+            return convertObject(or, depth, chainLength, inProgress);
         }
         return new TraceValue.Truncated("unsupported-value-type:" + value.type().name());
     }
 
-    private TraceValue convertArray(ArrayReference ar, int depth, Set<Long> inProgress) {
+    private TraceValue convertArray(ArrayReference ar, int depth, int chainLength, Set<Long> inProgress) {
         int length = ar.length();
         int limit = Math.min(length, limits.maxArrayElements());
         List<Value> values = length == 0 ? List.of() : ar.getValues(0, limit);
         List<TraceValue> elements = new ArrayList<>();
         for (Value v : values) {
-            elements.add(convert(v, depth + 1, inProgress));
+            elements.add(convert(v, depth + 1, chainLength, inProgress));
         }
         String componentType = ar.referenceType() instanceof ArrayType at
                 ? at.componentTypeName()
@@ -88,24 +105,24 @@ class TraceValueConverter {
         return new TraceValue.ArraySummary(componentType, length, elements, length > limit);
     }
 
-    private TraceValue convertObject(ObjectReference or, int depth, Set<Long> inProgress) {
+    private TraceValue convertObject(ObjectReference or, int depth, int chainLength, Set<Long> inProgress) {
         long id = or.uniqueID();
         if (inProgress.contains(id)) {
             return new TraceValue.ObjectSummary(or.referenceType().name(), String.valueOf(id), List.of(), true);
         }
         inProgress.add(id);
         try {
-            TraceValue semantic = tryConvertCollection(or, id, depth, inProgress);
+            TraceValue semantic = tryConvertCollection(or, id, depth, chainLength, inProgress);
             if (semantic != null) {
                 return semantic;
             }
-            return convertRawObject(or, id, depth, inProgress);
+            return convertRawObject(or, id, depth, chainLength, inProgress);
         } finally {
             inProgress.remove(id);
         }
     }
 
-    private TraceValue convertRawObject(ObjectReference or, long id, int depth, Set<Long> inProgress) {
+    private TraceValue convertRawObject(ObjectReference or, long id, int depth, int chainLength, Set<Long> inProgress) {
         List<Field> instanceFields = or.referenceType().allFields().stream()
                 .filter(f -> !f.isStatic())
                 .toList();
@@ -114,7 +131,15 @@ class TraceValueConverter {
         for (int i = 0; i < limit; i++) {
             Field field = instanceFields.get(i);
             Value fieldValue = or.getValue(field);
-            fields.add(new VariableSnapshot(field.name(), field.typeName(), convert(fieldValue, depth + 1, inProgress)));
+            // Same concrete type as the container -> a chain/tree edge (next,
+            // left, right, ...), draws from chainLength instead of depth. A
+            // different type is genuine nesting and still draws from depth.
+            boolean sameTypeChain = fieldValue instanceof ObjectReference fieldObj
+                    && fieldObj.referenceType().equals(or.referenceType());
+            int nextDepth = sameTypeChain ? depth : depth + 1;
+            int nextChainLength = sameTypeChain ? chainLength + 1 : chainLength;
+            fields.add(new VariableSnapshot(field.name(), field.typeName(),
+                    convert(fieldValue, nextDepth, nextChainLength, inProgress)));
         }
         return new TraceValue.ObjectSummary(or.referenceType().name(), String.valueOf(id), fields, instanceFields.size() > limit);
     }
@@ -124,23 +149,23 @@ class TraceValueConverter {
     // "not a recognized collection / could not read it" -> raw-field fallback.
     // ------------------------------------------------------------------
 
-    private TraceValue tryConvertCollection(ObjectReference or, long id, int depth, Set<Long> inProgress) {
+    private TraceValue tryConvertCollection(ObjectReference or, long id, int depth, int chainLength, Set<Long> inProgress) {
         String type = or.referenceType().name();
         try {
             switch (type) {
                 case "java.util.HashMap":
                 case "java.util.LinkedHashMap":
-                    return hashMapView(or, type, id, depth, inProgress);
+                    return hashMapView(or, type, id, depth, chainLength, inProgress);
                 case "java.util.TreeMap":
-                    return treeMapView(or, type, id, depth, inProgress);
+                    return treeMapView(or, type, id, depth, chainLength, inProgress);
                 case "java.util.HashSet":
                 case "java.util.LinkedHashSet":
-                    return backingMapSetView(or, type, id, depth, inProgress, "map");
+                    return backingMapSetView(or, type, id, depth, chainLength, inProgress, "map");
                 case "java.util.TreeSet":
-                    return backingMapSetView(or, type, id, depth, inProgress, "m");
+                    return backingMapSetView(or, type, id, depth, chainLength, inProgress, "m");
                 case "java.util.ArrayList":
                 case "java.util.Vector":
-                    return arrayListView(or, type, id, depth, inProgress);
+                    return arrayListView(or, type, id, depth, chainLength, inProgress);
                 default:
                     return null;
             }
@@ -151,9 +176,9 @@ class TraceValueConverter {
     }
 
     /** HashMap / LinkedHashMap: walk table[] buckets, following each Node.next chain. */
-    private TraceValue hashMapView(ObjectReference or, String type, long id, int depth, Set<Long> inProgress) {
+    private TraceValue hashMapView(ObjectReference or, String type, long id, int depth, int chainLength, Set<Long> inProgress) {
         List<TraceValue.MapSummary.Entry> entries = new ArrayList<>();
-        int total = collectHashMapEntries(or, entries, depth, inProgress);
+        int total = collectHashMapEntries(or, entries, depth, chainLength, inProgress);
         if (total < 0) {
             return null;
         }
@@ -165,7 +190,7 @@ class TraceValueConverter {
      * maxArrayElements). Returns the map's true size, or -1 if the layout wasn't
      * as expected (signals fallback).
      */
-    private int collectHashMapEntries(ObjectReference mapObj, List<TraceValue.MapSummary.Entry> out, int depth, Set<Long> inProgress) {
+    private int collectHashMapEntries(ObjectReference mapObj, List<TraceValue.MapSummary.Entry> out, int depth, int chainLength, Set<Long> inProgress) {
         int size = readIntField(mapObj, "size", -1);
         if (size < 0) {
             return -1;
@@ -188,8 +213,8 @@ class TraceValueConverter {
                 Value key = readField(nodeRef, "key");
                 Value val = readField(nodeRef, "value");
                 out.add(new TraceValue.MapSummary.Entry(
-                        convert(key, depth + 1, inProgress),
-                        convert(val, depth + 1, inProgress)));
+                        convert(key, depth + 1, chainLength, inProgress),
+                        convert(val, depth + 1, chainLength, inProgress)));
                 node = readField(nodeRef, "next");
             }
         }
@@ -197,7 +222,7 @@ class TraceValueConverter {
     }
 
     /** TreeMap: in-order walk of the red-black tree from root. */
-    private TraceValue treeMapView(ObjectReference or, String type, long id, int depth, Set<Long> inProgress) {
+    private TraceValue treeMapView(ObjectReference or, String type, long id, int depth, int chainLength, Set<Long> inProgress) {
         int size = readIntField(or, "size", -1);
         if (size < 0) {
             return null;
@@ -205,18 +230,18 @@ class TraceValueConverter {
         List<TraceValue.MapSummary.Entry> entries = new ArrayList<>();
         Value root = readField(or, "root");
         if (root instanceof ObjectReference rootRef) {
-            walkTreeMap(rootRef, entries, depth, inProgress);
+            walkTreeMap(rootRef, entries, depth, chainLength, inProgress);
         }
         return new TraceValue.MapSummary(type, String.valueOf(id), size, entries, size > entries.size());
     }
 
-    private void walkTreeMap(ObjectReference node, List<TraceValue.MapSummary.Entry> out, int depth, Set<Long> inProgress) {
+    private void walkTreeMap(ObjectReference node, List<TraceValue.MapSummary.Entry> out, int depth, int chainLength, Set<Long> inProgress) {
         if (out.size() >= limits.maxArrayElements()) {
             return;
         }
         Value left = readField(node, "left");
         if (left instanceof ObjectReference leftRef) {
-            walkTreeMap(leftRef, out, depth, inProgress);
+            walkTreeMap(leftRef, out, depth, chainLength, inProgress);
         }
         if (out.size() >= limits.maxArrayElements()) {
             return;
@@ -224,16 +249,16 @@ class TraceValueConverter {
         Value key = readField(node, "key");
         Value val = readField(node, "value");
         out.add(new TraceValue.MapSummary.Entry(
-                convert(key, depth + 1, inProgress),
-                convert(val, depth + 1, inProgress)));
+                convert(key, depth + 1, chainLength, inProgress),
+                convert(val, depth + 1, chainLength, inProgress)));
         Value right = readField(node, "right");
         if (right instanceof ObjectReference rightRef) {
-            walkTreeMap(rightRef, out, depth, inProgress);
+            walkTreeMap(rightRef, out, depth, chainLength, inProgress);
         }
     }
 
     /** HashSet/LinkedHashSet/TreeSet: elements are the KEYS of a backing map field. */
-    private TraceValue backingMapSetView(ObjectReference or, String type, long id, int depth, Set<Long> inProgress, String backingField) {
+    private TraceValue backingMapSetView(ObjectReference or, String type, long id, int depth, int chainLength, Set<Long> inProgress, String backingField) {
         Value backing = readField(or, backingField);
         if (!(backing instanceof ObjectReference mapObj)) {
             return null;
@@ -245,10 +270,10 @@ class TraceValueConverter {
             total = readIntField(mapObj, "size", -1);
             Value root = readField(mapObj, "root");
             if (root instanceof ObjectReference rootRef) {
-                walkTreeMap(rootRef, entries, depth, inProgress);
+                walkTreeMap(rootRef, entries, depth, chainLength, inProgress);
             }
         } else {
-            total = collectHashMapEntries(mapObj, entries, depth, inProgress);
+            total = collectHashMapEntries(mapObj, entries, depth, chainLength, inProgress);
         }
         if (total < 0) {
             return null;
@@ -261,7 +286,7 @@ class TraceValueConverter {
     }
 
     /** ArrayList / Vector: the first {@code size} slots of elementData[]. */
-    private TraceValue arrayListView(ObjectReference or, String type, long id, int depth, Set<Long> inProgress) {
+    private TraceValue arrayListView(ObjectReference or, String type, long id, int depth, int chainLength, Set<Long> inProgress) {
         int size = readIntField(or, "elementCount", -1);
         if (size < 0) {
             size = readIntField(or, "size", -1); // ArrayList uses "size", Vector "elementCount"
@@ -280,7 +305,7 @@ class TraceValueConverter {
         List<Value> values = limit == 0 ? List.of() : data.getValues(0, limit);
         List<TraceValue> elements = new ArrayList<>();
         for (Value v : values) {
-            elements.add(convert(v, depth + 1, inProgress));
+            elements.add(convert(v, depth + 1, chainLength, inProgress));
         }
         return new TraceValue.ListSummary(type, String.valueOf(id), size, elements, size > elements.size());
     }

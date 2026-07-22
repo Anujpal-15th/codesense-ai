@@ -79,7 +79,18 @@ def main():
     # They're plumbing, not program state - never meaningful to a learner.
     EXCLUDED_VALUE_MODULES = {"typing", "abc", "_collections_abc"}
 
-    def ser(v, depth, seen):
+    # Two separate budgets, not one. `depth` bounds genuine object nesting (an
+    # object containing an unrelated object containing another...) and stays
+    # tight (max_depth, default 4) - that shape is rare. `chain_len` bounds a
+    # same-type self-referential edge (a linked-list node's `next`, a tree
+    # node's `left`/`right` pointing to another node of the identical class) -
+    # that's structurally just a longer sequence, not deeper nesting, so it
+    # shares max_elems (the same "how many" budget lists/dicts/sets already
+    # get) instead of the narrow object-depth one. Without this split, an
+    # ordinary 6-7 node linked list or a modest tree would have its tail
+    # silently truncated, because walking next/left/right used to spend the
+    # same narrow budget meant for unrelated nested objects.
+    def ser(v, depth, chain_len, seen):
         if v is None:
             return {"valueKind": "null"}
         # bool must precede int: bool is an int subclass.
@@ -93,7 +104,7 @@ def main():
         if isinstance(v, str):
             cut = len(v) > max_str
             return {"valueKind": "string", "value": v[:max_str], "truncated": cut}
-        if depth <= 0:
+        if depth <= 0 or chain_len <= 0:
             return {"valueKind": "truncated", "reason": "max object depth reached"}
         vid = id(v)
         if vid in seen:
@@ -101,7 +112,7 @@ def main():
         seen = seen | {vid}
         ih = format(vid & 0xFFFFFF, "x")  # compact, stable-for-the-run identity
         if isinstance(v, (list, tuple)):
-            els = [ser(e, depth - 1, seen) for e in v[:max_elems]]
+            els = [ser(e, depth - 1, chain_len, seen) for e in v[:max_elems]]
             return {"valueKind": "list", "type": type(v).__name__, "identityHash": ih,
                     "size": len(v), "elements": els, "truncated": len(v) > max_elems}
         if isinstance(v, dict):
@@ -109,8 +120,8 @@ def main():
             for i, (k, val) in enumerate(v.items()):
                 if i >= max_elems:
                     break
-                entries.append({"key": ser(k, depth - 1, seen),
-                                "value": ser(val, depth - 1, seen)})
+                entries.append({"key": ser(k, depth - 1, chain_len, seen),
+                                "value": ser(val, depth - 1, chain_len, seen)})
             return {"valueKind": "map", "type": type(v).__name__, "identityHash": ih,
                     "size": len(v), "entries": entries, "truncated": len(v) > max_elems}
         if isinstance(v, (set, frozenset)):
@@ -118,7 +129,7 @@ def main():
             for i, e in enumerate(v):
                 if i >= max_elems:
                     break
-                els.append(ser(e, depth - 1, seen))
+                els.append(ser(e, depth - 1, chain_len, seen))
             return {"valueKind": "set", "type": type(v).__name__, "identityHash": ih,
                     "size": len(v), "elements": els, "truncated": len(v) > max_elems}
         # Arbitrary object: shallow field dump via vars(); repr fallback.
@@ -130,8 +141,14 @@ def main():
                     break
                 if name.startswith("__"):
                     continue
+                # Same concrete type as the container -> a chain/tree edge,
+                # draws from chain_len instead of depth. A different type is
+                # genuine nesting and still draws from depth.
+                same_type_chain = type(val) is type(v)
+                next_depth = depth if same_type_chain else depth - 1
+                next_chain_len = (chain_len - 1) if same_type_chain else chain_len
                 fields.append({"name": name, "declaredType": type(val).__name__,
-                               "value": ser(val, depth - 1, seen)})
+                               "value": ser(val, next_depth, next_chain_len, seen)})
             trunc = len(attrs) > max_fields
         except TypeError:
             r = repr(v)
@@ -152,7 +169,7 @@ def main():
             if type(val).__module__ in EXCLUDED_VALUE_MODULES:
                 continue
             out.append({"name": name, "declaredType": type(val).__name__,
-                        "value": ser(val, max_depth, frozenset())})
+                        "value": ser(val, max_depth, max_elems, frozenset())})
         return out
 
     def snapshot_stack(frame):
@@ -196,7 +213,7 @@ def main():
         elif event == "line":
             record(frame, "LINE", None)
         elif event == "return":
-            rv = None if arg is None else ser(arg, max_depth, frozenset())
+            rv = None if arg is None else ser(arg, max_depth, max_elems, frozenset())
             record(frame, "METHOD_EXIT", rv)
         if len(steps) >= max_steps:
             raise _Abort("TRUNCATED")
