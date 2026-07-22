@@ -10,28 +10,11 @@ function WorkspaceEditor({
   theme = 'vs',
   language = 'java',
   onEditorMount,
-  onReadOnlyEditAttempt,
-  readOnly = false,
   highlightActive = true,
 }) {
   const editorRef = useRef(null)
   const monacoRef = useRef(null)
   const decorationsRef = useRef(null)
-
-  // Kept in a ref (updated during render, before any effect runs) so the
-  // onChange handler below always sees the *current* readOnly, even when
-  // Monaco's onChange subscription fires from a stale-closure render. A plain
-  // `readOnly` prop read would be stale: @monaco-editor/react's value-prop sync
-  // effect can fire onChange before it re-subscribes to the new handler.
-  const readOnlyRef = useRef(readOnly)
-  readOnlyRef.current = readOnly
-
-  // Same ref-indirection reasoning as readOnlyRef - handleMount only runs
-  // once (on editor mount), so the onDidAttemptReadOnlyEdit listener it
-  // registers must read the *current* callback through a ref, not close over
-  // whatever onReadOnlyEditAttempt was at mount time.
-  const onReadOnlyEditAttemptRef = useRef(onReadOnlyEditAttempt)
-  onReadOnlyEditAttemptRef.current = onReadOnlyEditAttempt
 
   const currentLine = useExecutionStore(selectCurrentLine)
 
@@ -40,21 +23,13 @@ function WorkspaceEditor({
     monacoRef.current = monaco
     decorationsRef.current = editor.createDecorationsCollection([])
     registerJavaFormatter(monaco)
-    // Fires when the user tries to type/paste into a read-only editor (e.g.
-    // pasting new code while Visualize is showing a locked trace) - used to
-    // draw attention to the read-only banner so the silently-ignored edit
-    // doesn't go unnoticed.
-    editor.onDidAttemptReadOnlyEdit(() => onReadOnlyEditAttemptRef.current?.())
     onEditorMount?.(editor, monaco)
   }
 
-  // Monaco's onChange fires for programmatic model updates too, not just user
-  // typing. On the Visualize tab the `value` prop is the executed (wrapped)
-  // source, so without this guard that sync would call onCodeChange and
-  // overwrite the user's original code. Read-only means "showing executed
-  // source, not the user's code" - never propagate those changes upward.
+  // Always editable - the caller decides which underlying source (the user's
+  // code, or the executed/wrapped source shown on Visualize) a given edit
+  // should land in, via which value it currently passes as `code`.
   function handleChange(value) {
-    if (readOnlyRef.current) return
     onCodeChange(value ?? '')
   }
 
@@ -93,7 +68,7 @@ function WorkspaceEditor({
         value={code}
         onChange={handleChange}
         onMount={handleMount}
-        options={{ readOnly, automaticLayout: true }}
+        options={{ automaticLayout: true }}
       />
     </div>
   )

@@ -65,11 +65,6 @@ function WorkspacePage() {
 
   // 'idle' | 'copied' | 'failed' - drives the Copy button's transient feedback.
   const [copyStatus, setCopyStatus] = useState('idle')
-  // Bumped on every attempted edit of the read-only editor (Monaco's
-  // onDidAttemptReadOnlyEdit) - used as a remount key so the read-only banner
-  // replays its flash animation each time, drawing attention to a banner
-  // that's already visible rather than only appearing on first lock.
-  const [readOnlyAttemptTick, setReadOnlyAttemptTick] = useState(0)
   // Which action is mid-flight, so only the clicked button shows a spinner.
   const [pendingAction, setPendingAction] = useState(null)
   const [leftPct, setLeftPct] = useState(40)
@@ -92,10 +87,20 @@ function WorkspacePage() {
 
   const isBusy = isAnalyzing || isExecuting
   const isVisualizeTab = activeTab === 'visualize'
-  // Editor is only read-only while the Visualize tab is showing a trace - it
-  // stays editable everywhere else. Refresh is the escape hatch.
-  const isEditorLocked = isVisualizeTab && !!trace
-  const editorValue = isVisualizeTab && executedSource != null ? executedSource : code
+  // Visualize shows the executed (wrapped) source so line highlighting lines
+  // up with the trace - but it's always editable, same as the source on every
+  // other tab. An edit made there updates BOTH executedSource (so Monaco's
+  // controlled value doesn't get reverted next render) and code (so the next
+  // Run/Submit actually sends the edit - code is what gets posted, not
+  // executedSource). Without the second half of that, editing the wrapped
+  // source on Visualize would look like it worked but silently not affect
+  // the next run.
+  const showingExecutedSource = isVisualizeTab && executedSource != null
+  const editorValue = showingExecutedSource ? executedSource : code
+  const handleEditorChange = (value) => {
+    setCode(value)
+    if (showingExecutedSource) setExecutedSource(value)
+  }
 
   // Run executes only (fast, no AI). Validates the code is analyzable Java first.
   const handleRun = () => {
@@ -211,8 +216,6 @@ function WorkspacePage() {
   const handleEditorMount = (editor, monaco) => {
     editorApiRef.current = { editor, monaco }
   }
-
-  const handleReadOnlyEditAttempt = () => setReadOnlyAttemptTick((t) => t + 1)
 
   const handleFormat = () => {
     editorApiRef.current?.editor.getAction('editor.action.formatDocument')?.run()
@@ -409,35 +412,14 @@ function WorkspacePage() {
             onExample={handleExample}
             onCopy={handleCopy}
             copyStatus={copyStatus}
-            disabled={isEditorLocked}
             language={language}
             onLanguageChange={setLanguage}
           />
-          {isEditorLocked && (
-            <div
-              key={readOnlyAttemptTick}
-              className="value-flash flex shrink-0 items-center justify-between gap-3 border-b border-highlight-ink/30 bg-highlight-ink/10 px-4 py-2 text-sm text-highlight-ink"
-            >
-              <span>
-                <strong className="font-semibold">Editor is read-only</strong> — showing executed code. Click Refresh
-                to edit new code.
-              </span>
-              <button
-                type="button"
-                onClick={handleRefresh}
-                className="shrink-0 rounded-md border border-highlight-ink/40 px-3 py-1 font-mono text-xs font-semibold text-highlight-ink transition-colors hover:bg-highlight-ink/10"
-              >
-                Refresh
-              </button>
-            </div>
-          )}
           <div className="h-[55vh] min-h-0 lg:h-auto lg:flex-1">
             <WorkspaceEditor
               code={editorValue}
-              onCodeChange={setCode}
+              onCodeChange={handleEditorChange}
               onEditorMount={handleEditorMount}
-              onReadOnlyEditAttempt={handleReadOnlyEditAttempt}
-              readOnly={isEditorLocked}
               highlightActive={isVisualizeTab}
               language={language}
             />

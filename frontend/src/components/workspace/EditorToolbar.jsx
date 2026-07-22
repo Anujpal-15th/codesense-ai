@@ -36,7 +36,6 @@ function EditorToolbar({
   onExample,
   onCopy,
   copyStatus = 'idle',
-  disabled,
   language = 'java',
   onLanguageChange,
 }) {
@@ -47,9 +46,8 @@ function EditorToolbar({
       <select
         value={language}
         onChange={(e) => onLanguageChange?.(e.target.value)}
-        disabled={disabled}
         aria-label="Language"
-        className="cursor-pointer rounded-md border border-line bg-paper px-2.5 py-1 font-mono text-xs font-semibold text-ink-soft hover:text-ink disabled:cursor-default disabled:opacity-40"
+        className="cursor-pointer rounded-md border border-line bg-paper px-2.5 py-1 font-mono text-xs font-semibold text-ink-soft hover:text-ink"
       >
         <option value="java">Java</option>
         <option value="python">Python</option>
@@ -58,8 +56,8 @@ function EditorToolbar({
       <div className="flex items-center gap-3">
         {/* Monaco only has a Java formatter registered (formatJava.js) - no
             Python formatting yet, so the button is Java-only. */}
-        <ToolbarButton onClick={onFormat} disabled={disabled || language !== 'java'} label="Format" />
-        <ToolbarButton onClick={onExample} disabled={disabled} label="Example" />
+        <ToolbarButton onClick={onFormat} disabled={language !== 'java'} label="Format" />
+        <ToolbarButton onClick={onExample} label="Example" />
         <button
           type="button"
           onClick={onCopy}
@@ -73,8 +71,7 @@ function EditorToolbar({
         >
           {copyLabel}
         </button>
-        {/* Refresh resets everything — always enabled, since it's also the way
-            out of the read-only Visualize state. */}
+        {/* Refresh resets everything back to a blank workspace. */}
         <button
           type="button"
           onClick={onRefresh}
