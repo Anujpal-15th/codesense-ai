@@ -2,6 +2,10 @@
 backend/target/
 *.class
 
+# Python (execution-engine tracer, run locally against sample scripts)
+__pycache__/
+*.pyc
+
 # Frontend (Node/Vite)
 frontend/node_modules/
 frontend/dist/
