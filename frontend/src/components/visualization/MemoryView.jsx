@@ -3,6 +3,23 @@ import { selectCurrentStep, useExecutionStore } from '../../store/executionStore
 import InfoToggle from './InfoToggle'
 import { staggerDelaySeconds, POP_IN_DURATION_SECONDS } from './staggerDelay'
 import { useStepChanges } from './useStepChanges'
+import { boxedInnerValue } from './nodeShape'
+import { shortType } from './traceValue'
+
+// A boxed Integer/Long/etc. used to show as just "java.lang.Integer #55" - a
+// fully-qualified type and an id, no hint of what it actually holds, so
+// telling apart three different boxed Integers in a Map meant opening each
+// one or hunting down which variable referenced it. Shows the short type
+// name plus the wrapped value inline instead: "Integer(5) #55" - the same
+// unboxing ValueRenderer already does for the Variables panel, and the same
+// package-prefix trim Map/Set/List views already do, just applied here too.
+function objectLabel(objectSummary) {
+  const type = shortType(objectSummary.type)
+  const boxed = boxedInnerValue(objectSummary)
+  if (!boxed) return type
+  const text = boxed.valueKind === 'string' ? `"${boxed.value}"` : (boxed.literal ?? String(boxed.value ?? ''))
+  return `${type}(${text})`
+}
 
 function collectObjectRefs(step) {
   const refs = new Map()
@@ -108,7 +125,7 @@ function MemoryView() {
           key={`removed-${changes.tick}`}
           className="value-flash mb-2 rounded-md border border-highlight-ink/30 bg-highlight-ink/10 p-2 font-mono text-xs text-highlight-ink"
         >
-          Went out of scope: {removed.map(([hash, type]) => `${type} #${hash}`).join(', ')}
+          Went out of scope: {removed.map(([hash, type]) => `${shortType(type)} #${hash}`).join(', ')}
         </div>
       )}
       <div className="space-y-2">
@@ -129,7 +146,7 @@ function MemoryView() {
             >
               <div className="flex items-center justify-between gap-2 font-mono text-xs">
                 <span className="text-ink">
-                  {objectSummary.type} <span className="text-ink-soft">#{objectSummary.identityHash}</span>
+                  {objectLabel(objectSummary)} <span className="text-ink-soft">#{objectSummary.identityHash}</span>
                 </span>
                 {aliased && (
                   <span
