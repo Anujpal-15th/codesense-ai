@@ -1,6 +1,7 @@
 import { selectCurrentFrame, selectCurrentStep, useExecutionStore } from '../../store/executionStore'
 import ValueRenderer from './ValueRenderer'
 import { useStepChanges } from './useStepChanges'
+import { didExitingFrameGoDeeper, isRecursiveMethod } from './recursionAnalysis'
 
 // Selects tracedSource - not workspaceStore's executedSource - deliberately.
 // tracedSource is frozen at the moment the trace arrived, so this narration
@@ -61,7 +62,7 @@ function formatLiteral(value) {
   }
 }
 
-function buildNarration(step, frame, code) {
+function buildNarration(step, frame, code, wentDeeper) {
   if (!step || !frame) return null
 
   if (step.eventType === 'METHOD_ENTRY') {
@@ -82,7 +83,18 @@ function buildNarration(step, frame, code) {
   }
 
   if (step.eventType === 'METHOD_EXIT') {
-    return { text: `Returned from ${frame.className}.${frame.methodName}()` }
+    // wentDeeper === false means this specific call never went on to call
+    // anything deeper before returning - the generic, trace-derived stand-in
+    // for "hit the base case" (works for any recursion shape, not just pure
+    // self-recursion). null means "not applicable" (e.g. non-recursive code)
+    // and stays silent rather than claiming something the trace can't show.
+    const suffix =
+      wentDeeper === false
+        ? ' — hit the base case'
+        : wentDeeper === true
+          ? ' — done after its own deeper call(s) resolved'
+          : ''
+    return { text: `Returned from ${frame.className}.${frame.methodName}()${suffix}` }
   }
 
   return null
@@ -92,11 +104,20 @@ function ExecutionNarrative() {
   const step = useExecutionStore(selectCurrentStep)
   const frame = useExecutionStore(selectCurrentFrame)
   const tracedSource = useExecutionStore(selectTracedSource)
+  const trace = useExecutionStore((s) => s.trace)
+  const currentStepIndex = useExecutionStore((s) => s.currentStepIndex)
   const changes = useStepChanges()
 
   if (!step || !frame) return null
 
-  const narration = buildNarration(step, frame, tracedSource)
+  // "Base case" / "done after its own deeper call(s)" is reserved for
+  // methods that actually recurse somewhere in this run - an ordinary
+  // non-recursive return stays plain, same as before this feature existed.
+  const wentDeeper =
+    step.eventType === 'METHOD_EXIT' && isRecursiveMethod(trace, frame.className, frame.methodName)
+      ? didExitingFrameGoDeeper(trace, currentStepIndex)
+      : null
+  const narration = buildNarration(step, frame, tracedSource, wentDeeper)
   const showReturnValue = step.eventType === 'METHOD_EXIT' && step.returnValue != null
   const changeSummary = buildChangeSummary(frame, changes)
 
