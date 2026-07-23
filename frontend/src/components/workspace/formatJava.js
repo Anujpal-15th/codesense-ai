@@ -6,10 +6,25 @@
 // for typical interview-style snippets, not a full pretty-printer.
 const INDENT_UNIT = '    '
 
+/** Index of the first non-whitespace character at or after `i` - space, tab,
+ * \r, \n only, never crosses into a comment/string (those start with a
+ * non-whitespace character, so the scan simply stops there). */
+function skipWhitespace(source, i) {
+  while (i < source.length && ' \t\r\n'.includes(source[i])) i++
+  return i
+}
+
 // Splits already-compact/minified code onto separate lines by inserting a newline
 // after `{`, before/after `}`, and after `;` — skipped while scanning inside a string
 // or char literal (tracked via quote state + escape handling) or a line comment, so we
 // don't break code inside quoted text. This runs before the indentation pass below.
+//
+// Whitespace already present right after one of these split points is consumed
+// (via skipWhitespace) rather than left in place - otherwise, for code that's
+// ALREADY split across lines (not minified), the original newline and the
+// freshly-inserted one both survive, doubling into a blank line after every
+// statement and brace. Minified input (no whitespace there to begin with)
+// behaves identically either way, so this doesn't change that original case.
 function splitStatements(source) {
   let result = ''
   let inString = false
@@ -79,14 +94,23 @@ function splitStatements(source) {
 
     if (ch === '{') {
       result += ch + '\n'
+      i = skipWhitespace(source, i + 1) - 1
       continue
     }
     if (ch === '}') {
-      result += '\n' + ch + '\n'
+      // Only add the leading newline if one isn't already there - the `;`/`{`
+      // branches above already end their output in `\n`, so by the time a
+      // normal (non-empty-block) `}` is reached, `result` already ends in
+      // one; unconditionally adding another produced a blank line before
+      // every closing brace.
+      if (!result.endsWith('\n')) result += '\n'
+      result += ch + '\n'
+      i = skipWhitespace(source, i + 1) - 1
       continue
     }
     if (ch === ';') {
       result += ch + '\n'
+      i = skipWhitespace(source, i + 1) - 1
       continue
     }
 
