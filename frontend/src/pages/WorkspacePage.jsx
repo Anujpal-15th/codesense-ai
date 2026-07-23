@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 import { NavLink } from 'react-router-dom'
 import AnalysisPanel from '../components/workspace/AnalysisPanel'
 import ConsoleOutputPanel from '../components/workspace/ConsoleOutputPanel'
@@ -13,28 +13,22 @@ import MemoryView from '../components/visualization/MemoryView'
 import RecursionBadge from '../components/visualization/RecursionBadge'
 import VariablesPanel from '../components/visualization/VariablesPanel'
 import VisualizeLegend from '../components/visualization/VisualizeLegend'
-import { validateSubmission } from '../lib/codeValidation'
-import { useAnalysisStore } from '../store/analysisStore'
+import { navLinkClass } from '../lib/navLinkClass'
 import { useExecutionStore } from '../store/executionStore'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import Spinner from '../components/Spinner'
+import InlineError from '../components/InlineError'
+import LoadingRow from '../components/LoadingRow'
+import TabStrip from '../components/TabStrip'
+import { useResizableSplit } from '../hooks/useResizableSplit'
+import { useClipboardCopy } from '../hooks/useClipboardCopy'
+import { useRunAndSubmit } from '../hooks/useRunAndSubmit'
 
 const TABS = [
   { id: 'analysis', label: 'Analysis' },
   { id: 'visualize', label: 'Visualize' },
   { id: 'result', label: 'Result' },
 ]
-
-const navLinkClass = ({ isActive }) =>
-  `font-mono text-sm font-medium px-3 py-2 ${isActive ? 'text-ink' : 'text-ink-soft hover:text-ink'}`
-
-function Spinner() {
-  return (
-    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z" />
-    </svg>
-  )
-}
 
 function EmptyState({ message }) {
   return (
@@ -64,29 +58,21 @@ function WorkspacePage() {
   const setExecutedSource = useWorkspaceStore((state) => state.setExecutedSource)
   const resetWorkspace = useWorkspaceStore((state) => state.resetWorkspace)
 
-  // 'idle' | 'copied' | 'failed' - drives the Copy button's transient feedback.
-  const [copyStatus, setCopyStatus] = useState('idle')
-  // Which action is mid-flight, so only the clicked button shows a spinner.
-  const [pendingAction, setPendingAction] = useState(null)
-  const [leftPct, setLeftPct] = useState(40)
-  const [dragging, setDragging] = useState(false)
-  const [isDesktop, setIsDesktop] = useState(true)
-
   const editorApiRef = useRef(null)
-  const copiedTimerRef = useRef(null)
-  const runRef = useRef(null)
-  const splitRef = useRef(null)
-  const draggingRef = useRef(false)
-
-  const analysisSubmit = useAnalysisStore((state) => state.submit)
-  const isAnalyzing = useAnalysisStore((state) => state.isLoading)
 
   const trace = useExecutionStore((state) => state.trace)
-  const isExecuting = useExecutionStore((state) => state.isLoading)
   const executionError = useExecutionStore((state) => state.error)
-  const executionSubmit = useExecutionStore((state) => state.submit)
 
-  const isBusy = isAnalyzing || isExecuting
+  const { splitRef, dragging, leftPct, leftStyle, handleDragStart, handleDividerKeyDown } = useResizableSplit(40)
+  const { status: copyStatus, copy: handleCopy } = useClipboardCopy(() => code)
+  const { pendingAction, isBusy, isExecuting, handleRun, handleSubmit, handleRefresh } = useRunAndSubmit({
+    code,
+    language,
+    setActiveTab,
+    setExecutedSource,
+    resetWorkspace,
+  })
+
   const isVisualizeTab = activeTab === 'visualize'
   // Visualize shows the executed (wrapped) source so line highlighting lines
   // up with the trace - but it's always editable, same as the source on every
@@ -103,117 +89,6 @@ function WorkspacePage() {
     if (showingExecutedSource) setExecutedSource(value)
   }
 
-  // Run executes only (fast, no AI). Validates the code is analyzable Java first.
-  const handleRun = () => {
-    if (!code.trim() || isBusy) return
-    const check = validateSubmission(code, language)
-    if (!check.valid) {
-      setActiveTab('result')
-      useExecutionStore.getState().pause()
-      useExecutionStore.setState({ error: check.message, trace: null, isLoading: false, currentStepIndex: 0 })
-      return
-    }
-    setActiveTab('result')
-    setPendingAction('run')
-    executionSubmit(code, language)
-      .then((response) => setExecutedSource(response.executedSourceCode))
-      .catch(() => {})
-      .finally(() => setPendingAction(null))
-  }
-
-  // Submit runs AI analysis AND execution/visualization together, in parallel
-  // (Promise.all - both requests fire immediately, neither waits on the other).
-  // Lands on the Analysis tab right away; each tab reads its own store's
-  // isLoading/data independently, so whichever call finishes first renders
-  // immediately instead of both being gated behind the slower one. Execution
-  // is typically the faster call (sub-second) against the LLM-backed analysis
-  // (several seconds), so in practice the Visualize tab's content is usually
-  // ready well before the Analysis tab's is.
-  const handleSubmit = async () => {
-    if (!code.trim() || isBusy) return
-    const check = validateSubmission(code, language)
-    if (!check.valid) {
-      setActiveTab('analysis')
-      useAnalysisStore.setState({ error: check.message, currentAnalysis: null, isLoading: false })
-      return
-    }
-    setActiveTab('analysis')
-    setPendingAction('submit')
-    try {
-      await Promise.all([
-        analysisSubmit(code, language),
-        executionSubmit(code, language).then((response) => setExecutedSource(response.executedSourceCode)),
-      ])
-    } catch {
-      // Each store already recorded its own error via its own submit() - see
-      // executionStore/analysisStore. Nothing further to do here; this catch
-      // only exists so a single failing call can't produce an unhandled
-      // rejection while the other call is still in flight.
-    } finally {
-      setPendingAction(null)
-    }
-  }
-
-  // Refresh clears everything back to a blank workspace.
-  const handleRefresh = () => {
-    setPendingAction(null)
-    resetWorkspace()
-    useExecutionStore.getState().reset()
-    useAnalysisStore.getState().reset()
-  }
-
-  // Ctrl/Cmd+Enter runs (the fast, no-AI path), matching LeetCode. Registered
-  // once with a ref to the latest handler to avoid stale-closure bugs.
-  runRef.current = handleRun
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault()
-        runRef.current?.()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
-
-  // Track desktop vs mobile so the drag-resized width only applies on lg+
-  // (below that the panels stack vertically and a % width would be wrong).
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1024px)')
-    const update = () => setIsDesktop(mq.matches)
-    update()
-    mq.addEventListener('change', update)
-    return () => mq.removeEventListener('change', update)
-  }, [])
-
-  // Draggable divider: recompute the left panel width from the pointer's x
-  // position within the split container, clamped so neither panel drops below 25%.
-  useEffect(() => {
-    const onMove = (e) => {
-      if (!draggingRef.current || !splitRef.current) return
-      const rect = splitRef.current.getBoundingClientRect()
-      const pct = ((e.clientX - rect.left) / rect.width) * 100
-      setLeftPct(Math.min(75, Math.max(25, pct)))
-    }
-    const onUp = () => {
-      if (draggingRef.current) {
-        draggingRef.current = false
-        setDragging(false)
-      }
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-  }, [])
-
-  const handleDragStart = () => {
-    draggingRef.current = true
-    setDragging(true)
-  }
-
   const handleEditorMount = (editor, monaco) => {
     editorApiRef.current = { editor, monaco }
   }
@@ -225,47 +100,6 @@ function WorkspacePage() {
   const handleExample = () =>
     setCode(language === 'python' ? PYTHON_EXAMPLE : reconstructExamplePlainText())
 
-  const handleCopy = () => {
-    const flash = (status, ms) => {
-      setCopyStatus(status)
-      clearTimeout(copiedTimerRef.current)
-      copiedTimerRef.current = setTimeout(() => setCopyStatus('idle'), ms)
-    }
-
-    // Synchronous fallback for contexts where the async Clipboard API is
-    // blocked (insecure origin, permissions policy, embedded frames). Uses a
-    // throwaway off-screen textarea + execCommand, which only needs the click's
-    // user activation rather than clipboard-write permission.
-    const legacyCopy = () => {
-      try {
-        const ta = document.createElement('textarea')
-        ta.value = code
-        ta.style.position = 'fixed'
-        ta.style.top = '-9999px'
-        ta.setAttribute('readonly', '')
-        document.body.appendChild(ta)
-        ta.select()
-        const ok = document.execCommand('copy')
-        document.body.removeChild(ta)
-        return ok
-      } catch {
-        return false
-      }
-    }
-
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard
-        .writeText(code)
-        .then(() => flash('copied', 1500))
-        .catch(() => flash(legacyCopy() ? 'copied' : 'failed', 2500))
-    } else {
-      flash(legacyCopy() ? 'copied' : 'failed', 2500)
-    }
-  }
-
-  useEffect(() => () => clearTimeout(copiedTimerRef.current), [])
-
-  const leftStyle = isDesktop ? { width: `${leftPct}%` } : undefined
   const runLoading = pendingAction === 'run' && isExecuting
   const submitLoading = pendingAction === 'submit' && isBusy
 
@@ -323,28 +157,17 @@ function WorkspacePage() {
           style={leftStyle}
           className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[15px] border-b border-line bg-paper-raised lg:h-full lg:border-b-0 lg:border-r"
         >
-          <div className="flex shrink-0 gap-1 rounded-t-[15px] border-b border-line bg-paper-raised px-4">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`-mb-px border-b-2 px-4 py-3 font-mono text-sm font-semibold ${
-                  activeTab === tab.id
-                    ? 'border-primary text-ink'
-                    : 'border-transparent text-ink-soft hover:text-ink'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <TabStrip
+            tabs={TABS}
+            activeId={activeTab}
+            onChange={setActiveTab}
+            tabPadding="py-3"
+            className="shrink-0 rounded-t-[15px] bg-paper-raised px-4"
+          />
 
           <div className="min-h-0 flex-1 overflow-y-auto rounded-lg p-4">
             {executionError && activeTab !== 'analysis' && (
-              <p className="mb-4 rounded-lg border border-correct/30 bg-correct/10 p-3 text-sm text-correct">
-                {executionError}
-              </p>
+              <InlineError className="mb-4">{executionError}</InlineError>
             )}
 
             {activeTab === 'result' &&
@@ -354,10 +177,7 @@ function WorkspacePage() {
                   <ConsoleOutputPanel />
                 </div>
               ) : isExecuting ? (
-                <div className="flex items-center gap-3 rounded-lg border border-line bg-paper-raised p-6 text-sm text-ink-soft">
-                  <Spinner />
-                  Running your code…
-                </div>
+                <LoadingRow>Running your code…</LoadingRow>
               ) : (
                 !executionError && (
                   <EmptyState message="Click Run or Submit to see the execution outcome and console output here." />
@@ -380,10 +200,7 @@ function WorkspacePage() {
                   </div>
                 </div>
               ) : isExecuting ? (
-                <div className="flex items-center gap-3 rounded-lg border border-line bg-paper-raised p-6 text-sm text-ink-soft">
-                  <Spinner />
-                  Building visualization…
-                </div>
+                <LoadingRow>Building visualization…</LoadingRow>
               ) : (
                 <EmptyState message="Click Submit (or Run) to build a step-through of your code's execution." />
               ))}
@@ -399,9 +216,15 @@ function WorkspacePage() {
         {/* DRAGGABLE DIVIDER (desktop only) */}
         <div
           onMouseDown={handleDragStart}
-          className="hidden w-1.5 shrink-0 cursor-col-resize bg-line transition-colors hover:bg-primary lg:block"
+          onKeyDown={handleDividerKeyDown}
+          className="hidden w-1.5 shrink-0 cursor-col-resize bg-line transition-colors hover:bg-primary focus-visible:bg-primary focus-visible:outline-none lg:block"
           role="separator"
           aria-orientation="vertical"
+          aria-label="Resize panels"
+          aria-valuenow={Math.round(leftPct)}
+          aria-valuemin={25}
+          aria-valuemax={75}
+          tabIndex={0}
         />
 
         {/* RIGHT — code editor. min-w-0 lets this flex child shrink below its

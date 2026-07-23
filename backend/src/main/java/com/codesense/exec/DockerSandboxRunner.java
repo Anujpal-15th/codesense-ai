@@ -12,7 +12,6 @@ import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -167,28 +166,7 @@ class DockerSandboxRunner implements SandboxRunner {
     }
 
     private List<String> buildDockerRunCommand(Path classOutputDir, String mainClassName, int hostPort, String containerName) {
-        List<String> command = new ArrayList<>();
-        command.add("docker");
-        command.add("run");
-        command.add("--rm");
-        // A normal user-defined bridge (so -p works); egress is dropped by the
-        // host DOCKER-USER iptables rule provisioned alongside this network -
-        // NOT by these flags. See the class javadoc above.
-        command.add("--network");
-        command.add(network);
-        command.add("--memory");
-        command.add(memory);
-        command.add("--memory-swap");
-        command.add(memory);
-        command.add("--cpus");
-        command.add(cpus);
-        command.add("--pids-limit");
-        command.add("128");
-        command.add("--read-only");
-        command.add("--tmpfs");
-        command.add("/tmp:rw,size=16m,mode=1777");
-        command.add("-v");
-        command.add(classOutputDir.toAbsolutePath() + ":/work:ro");
+        List<String> command = DockerRunCommandBuilder.baseFlags(network, memory, cpus, classOutputDir);
         // Loopback-only: the JDWP port is unauthenticated RCE, never expose it
         // beyond the host. Binding 0.0.0.0 would make it LAN-reachable.
         command.add("-p");

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getAnalysisById } from '../api/analysisApi'
 import ResultCard from '../components/ResultCard'
+import { extractErrorMessage } from '../lib/httpError'
 
 function SubmittedCode({ code }) {
   if (!code) return null
@@ -15,10 +16,6 @@ function SubmittedCode({ code }) {
       </pre>
     </div>
   )
-}
-
-function extractErrorMessage(error) {
-  return error.response?.data?.error ?? error.message ?? 'Something went wrong'
 }
 
 // Deliberately local React state, NOT the shared analysisStore - that store is

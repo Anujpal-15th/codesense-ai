@@ -4,9 +4,8 @@ import ExecutionHistoryLoaderPage from './pages/ExecutionHistoryLoaderPage'
 import HistoryPage from './pages/HistoryPage'
 import LandingPage from './pages/LandingPage'
 import WorkspacePage from './pages/WorkspacePage'
-
-const navLinkClass = ({ isActive }) =>
-  `font-mono text-sm font-medium px-3 py-2 ${isActive ? 'text-ink' : 'text-ink-soft hover:text-ink'}`
+import ErrorBoundary from './components/ErrorBoundary'
+import { navLinkClass } from './lib/navLinkClass'
 
 function AppShell() {
   return (
@@ -37,16 +36,18 @@ function AppShell() {
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
-      {/* Workspace is a full-viewport LeetCode-style layout with its own top bar. */}
-      <Route path="/analyze" element={<WorkspacePage />} />
-      <Route element={<AppShell />}>
-        <Route path="/history" element={<HistoryPage />} />
-        <Route path="/history/:id" element={<AnalysisDetailPage />} />
-        <Route path="/history/executions/:id" element={<ExecutionHistoryLoaderPage />} />
-      </Route>
-    </Routes>
+    <ErrorBoundary>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        {/* Workspace is a full-viewport LeetCode-style layout with its own top bar. */}
+        <Route path="/analyze" element={<WorkspacePage />} />
+        <Route element={<AppShell />}>
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/history/:id" element={<AnalysisDetailPage />} />
+          <Route path="/history/executions/:id" element={<ExecutionHistoryLoaderPage />} />
+        </Route>
+      </Routes>
+    </ErrorBoundary>
   )
 }
 

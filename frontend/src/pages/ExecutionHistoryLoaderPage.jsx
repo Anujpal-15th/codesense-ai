@@ -2,10 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useExecutionStore } from '../store/executionStore'
 import { useWorkspaceStore } from '../store/workspaceStore'
-
-function extractErrorMessage(error) {
-  return error.response?.data?.error ?? error.message ?? 'Something went wrong'
-}
+import { extractErrorMessage } from '../lib/httpError'
 
 // Deliberately not its own rendering path - a past execution is a trace, and
 // the Visualize tab already renders traces. This page's only job is to fetch

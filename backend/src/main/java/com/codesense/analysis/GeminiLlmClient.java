@@ -1,17 +1,13 @@
 package com.codesense.analysis;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
 
-@Slf4j
 @Service
 @ConditionalOnProperty(prefix = "llm", name = "provider", havingValue = "gemini")
 class GeminiLlmClient implements LlmClient {
@@ -39,31 +35,10 @@ class GeminiLlmClient implements LlmClient {
                 List.of(new GeminiContent("user", List.of(new GeminiPart(codeSnippet)))),
                 new GeminiGenerationConfig(1024)
         );
-
-        GeminiResponse response;
-        try {
-            response = RetryingLlmCall.call("Gemini", () -> geminiRestClient.post()
-                    .uri("/models/{model}:generateContent", model)
-                    .body(request)
-                    .retrieve()
-                    .body(GeminiResponse.class));
-        } catch (RestClientResponseException e) {
-            log.warn("Gemini API returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new AnalysisFailedException("Gemini API returned " + e.getStatusCode(), e);
-        } catch (RestClientException e) {
-            throw new AnalysisFailedException("Failed to reach Gemini API", e);
-        }
-
-        if (response == null || response.candidates() == null || response.candidates().isEmpty()) {
-            throw new AnalysisFailedException("Gemini API returned an empty response");
-        }
-
-        List<GeminiPart> parts = response.candidates().get(0).content().parts();
-        if (parts == null || parts.isEmpty()) {
-            throw new AnalysisFailedException("Gemini API returned an empty response");
-        }
-
-        return LlmResponseParser.parse("Gemini", parts.get(0).text(), objectMapper);
+        String rawText = LlmClientSupport.callAndExtractText("Gemini",
+                () -> geminiRestClient.post().uri("/models/{model}:generateContent", model).body(request).retrieve().body(GeminiResponse.class),
+                r -> r.candidates().get(0).content().parts().get(0).text());
+        return LlmResponseParser.parse("Gemini", rawText, objectMapper);
     }
 
     @Override
@@ -73,30 +48,9 @@ class GeminiLlmClient implements LlmClient {
                 List.of(new GeminiContent("user", List.of(new GeminiPart(userMessage)))),
                 new GeminiGenerationConfig(4096)
         );
-
-        GeminiResponse response;
-        try {
-            response = RetryingLlmCall.call("Gemini", () -> geminiRestClient.post()
-                    .uri("/models/{model}:generateContent", model)
-                    .body(request)
-                    .retrieve()
-                    .body(GeminiResponse.class));
-        } catch (RestClientResponseException e) {
-            log.warn("Gemini API returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new AnalysisFailedException("Gemini API returned " + e.getStatusCode(), e);
-        } catch (RestClientException e) {
-            throw new AnalysisFailedException("Failed to reach Gemini API", e);
-        }
-
-        if (response == null || response.candidates() == null || response.candidates().isEmpty()) {
-            throw new AnalysisFailedException("Gemini API returned an empty response");
-        }
-
-        List<GeminiPart> parts = response.candidates().get(0).content().parts();
-        if (parts == null || parts.isEmpty()) {
-            throw new AnalysisFailedException("Gemini API returned an empty response");
-        }
-
-        return LlmResponseParser.stripCodeFences(parts.get(0).text());
+        String rawText = LlmClientSupport.callAndExtractText("Gemini",
+                () -> geminiRestClient.post().uri("/models/{model}:generateContent", model).body(request).retrieve().body(GeminiResponse.class),
+                r -> r.candidates().get(0).content().parts().get(0).text());
+        return LlmResponseParser.stripCodeFences(rawText);
     }
 }

@@ -1,17 +1,13 @@
 package com.codesense.analysis;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
 
-@Slf4j
 @Service
 @ConditionalOnProperty(prefix = "llm", name = "provider", havingValue = "github-models")
 class GithubModelsLlmClient implements LlmClient {
@@ -41,26 +37,10 @@ class GithubModelsLlmClient implements LlmClient {
                         new GithubModelsMessage("user", codeSnippet)
                 )
         );
-
-        GithubModelsChatResponse response;
-        try {
-            response = RetryingLlmCall.call("GitHub Models", () -> githubModelsRestClient.post()
-                    .uri("/chat/completions")
-                    .body(request)
-                    .retrieve()
-                    .body(GithubModelsChatResponse.class));
-        } catch (RestClientResponseException e) {
-            log.warn("GitHub Models API returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new AnalysisFailedException("GitHub Models API returned " + e.getStatusCode(), e);
-        } catch (RestClientException e) {
-            throw new AnalysisFailedException("Failed to reach GitHub Models API", e);
-        }
-
-        if (response == null || response.choices() == null || response.choices().isEmpty()) {
-            throw new AnalysisFailedException("GitHub Models API returned an empty response");
-        }
-
-        return LlmResponseParser.parse("GitHub Models", response.choices().get(0).message().content(), objectMapper);
+        String rawText = LlmClientSupport.callAndExtractText("GitHub Models",
+                () -> githubModelsRestClient.post().uri("/chat/completions").body(request).retrieve().body(GithubModelsChatResponse.class),
+                r -> r.choices().get(0).message().content());
+        return LlmResponseParser.parse("GitHub Models", rawText, objectMapper);
     }
 
     @Override
@@ -72,25 +52,9 @@ class GithubModelsLlmClient implements LlmClient {
                         new GithubModelsMessage("user", userMessage)
                 )
         );
-
-        GithubModelsChatResponse response;
-        try {
-            response = RetryingLlmCall.call("GitHub Models", () -> githubModelsRestClient.post()
-                    .uri("/chat/completions")
-                    .body(request)
-                    .retrieve()
-                    .body(GithubModelsChatResponse.class));
-        } catch (RestClientResponseException e) {
-            log.warn("GitHub Models API returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new AnalysisFailedException("GitHub Models API returned " + e.getStatusCode(), e);
-        } catch (RestClientException e) {
-            throw new AnalysisFailedException("Failed to reach GitHub Models API", e);
-        }
-
-        if (response == null || response.choices() == null || response.choices().isEmpty()) {
-            throw new AnalysisFailedException("GitHub Models API returned an empty response");
-        }
-
-        return LlmResponseParser.stripCodeFences(response.choices().get(0).message().content());
+        String rawText = LlmClientSupport.callAndExtractText("GitHub Models",
+                () -> githubModelsRestClient.post().uri("/chat/completions").body(request).retrieve().body(GithubModelsChatResponse.class),
+                r -> r.choices().get(0).message().content());
+        return LlmResponseParser.stripCodeFences(rawText);
     }
 }

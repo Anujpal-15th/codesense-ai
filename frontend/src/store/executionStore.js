@@ -1,14 +1,19 @@
 import { create } from 'zustand'
 import { getExecutionHistoryById, getExecutionHistorySummaries, submitExecution } from '../api/executionApi'
 import { computeStepChanges } from '../components/visualization/stepDiff'
-
-function extractErrorMessage(error) {
-  return error.response?.data?.error ?? error.message ?? 'Something went wrong'
-}
+import { extractErrorMessage, StaleRequestError } from '../lib/httpError'
 
 const AUTO_ADVANCE_INTERVAL_MS = 600
 
 let playbackIntervalId = null
+
+// Bumped by every submit()/loadFromHistory() call and by reset() - both
+// mutate the same trace/tracedSource/currentStepIndex fields, so either one
+// superseding the other invalidates it. Without this, clicking Refresh (or
+// Submit again) while a previous request is still in flight let the stale
+// response land afterward and silently repopulate trace state the user had
+// already cleared.
+let executionRequestSeq = 0
 
 // See jumpToNextChange/jumpToPrevChange below. A call/return is always
 // "interesting" (the call stack itself just changed shape, regardless of
@@ -48,6 +53,7 @@ export const useExecutionStore = create((set, get) => ({
 
   submit: async (sourceCode, language = 'java') => {
     get().pause()
+    const seq = ++executionRequestSeq
     set({
       isLoading: true,
       error: null,
@@ -60,6 +66,7 @@ export const useExecutionStore = create((set, get) => ({
     })
     try {
       const response = await submitExecution(sourceCode, language)
+      if (seq !== executionRequestSeq) throw new StaleRequestError()
       set({
         trace: response.trace,
         createdAt: response.createdAt,
@@ -70,7 +77,9 @@ export const useExecutionStore = create((set, get) => ({
       })
       return response
     } catch (error) {
-      set({ error: extractErrorMessage(error), isLoading: false })
+      if (seq === executionRequestSeq) {
+        set({ error: extractErrorMessage(error), isLoading: false })
+      }
       throw error
     }
   },
@@ -92,9 +101,11 @@ export const useExecutionStore = create((set, get) => ({
    * editor and language selector, which live in workspaceStore, not here. */
   loadFromHistory: async (id) => {
     get().pause()
+    const seq = ++executionRequestSeq
     set({ isLoading: true, error: null })
     try {
       const detail = await getExecutionHistoryById(id)
+      if (seq !== executionRequestSeq) throw new StaleRequestError()
       set({
         trace: detail.trace,
         createdAt: detail.createdAt,
@@ -105,7 +116,9 @@ export const useExecutionStore = create((set, get) => ({
       })
       return detail
     } catch (error) {
-      set({ error: extractErrorMessage(error), isLoading: false })
+      if (seq === executionRequestSeq) {
+        set({ error: extractErrorMessage(error), isLoading: false })
+      }
       throw error
     }
   },
@@ -191,6 +204,7 @@ export const useExecutionStore = create((set, get) => ({
 
   reset: () => {
     get().pause()
+    executionRequestSeq++ // invalidate any submit()/loadFromHistory() still in flight
     set({
       trace: null,
       createdAt: null,

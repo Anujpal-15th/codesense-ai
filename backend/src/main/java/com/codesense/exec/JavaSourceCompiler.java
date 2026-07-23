@@ -1,7 +1,6 @@
 package com.codesense.exec;
 
 import jakarta.annotation.PreDestroy;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import javax.tools.Diagnostic;
@@ -11,16 +10,12 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermissions;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Compiles a single submitted Java source file in-memory/on-disk (a temp dir),
@@ -46,7 +41,6 @@ import java.util.stream.Stream;
  * dev tool (each compile is fast; see profiling numbers in
  * implementation-notes.md).
  */
-@Slf4j
 @Service
 class JavaSourceCompiler {
 
@@ -86,23 +80,9 @@ class JavaSourceCompiler {
             // sandbox) - a 700 dir owned by the host process user is
             // unreadable to that container user, which surfaces as a
             // ClassNotFoundException at trace time, not a compile error.
-            // Widen to 755 so the sandbox user can read (but not write) it.
-            // Guarded on POSIX support so this stays a no-op on Windows dev,
-            // where NTFS doesn't have a "posix" FileAttributeView and
-            // local-process mode (same OS user runs both the compiler and
-            // the debuggee) doesn't need this.
-            if (workDir.getFileSystem().supportedFileAttributeViews().contains("posix")) {
-                try {
-                    // Widen from 700 to 755 so the non-root 'sandbox' user inside
-                    // the Docker container (DockerSandboxRunner) can traverse and
-                    // read the compiled .class files. Without this, JDI attach fails
-                    // with ClassNotFoundException even though the files exist on the
-                    // host filesystem - a different-OS-user permission gap.
-                    Files.setPosixFilePermissions(workDir, PosixFilePermissions.fromString("rwxr-xr-x"));
-                } catch (IOException e) {
-                    throw new ExecutionFailedException("Failed to set compile work dir permissions", e);
-                }
-            }
+            // Widened to 755 (no-op on Windows dev) by the same helper
+            // PythonExecutionHandler uses for its own work dir.
+            SandboxFsUtil.widenForContainerUser(workDir);
 
             Path sourceFile = workDir.resolve(mainClassName + ".java");
             try {
@@ -134,52 +114,10 @@ class JavaSourceCompiler {
         }
     }
 
-    /**
-     * Best-effort recursive delete of a compile work dir. Retries briefly:
-     * the debuggee JVM is killed via a fire-and-forget destroyForcibly(), so
-     * on Windows it can still hold locks on the class files for a moment
-     * after {@code SandboxHandle.close()} returns. A dir that still can't be
-     * deleted after the retries is logged and abandoned - never worth
-     * failing the request over.
-     */
+    /** Delegates to the same retrying delete {@link PythonExecutionHandler}
+     * uses for its own work dir - see {@link SandboxFsUtil#deleteTreeWithRetry}. */
     void cleanupWorkDir(Path workDir) {
-        if (workDir == null) {
-            return;
-        }
-        for (int attempt = 0; attempt < 3; attempt++) {
-            if (attempt > 0) {
-                try {
-                    Thread.sleep(150L * attempt);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
-            try {
-                if (deleteTree(workDir)) {
-                    return;
-                }
-            } catch (IOException | UncheckedIOException e) {
-                // locked file mid-walk; retry
-            }
-        }
-        log.warn("Could not delete compile work dir after retries (leaked): {}", workDir);
-    }
-
-    private boolean deleteTree(Path dir) throws IOException {
-        if (!Files.exists(dir)) {
-            return true;
-        }
-        try (Stream<Path> walk = Files.walk(dir)) {
-            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.delete(p);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-        }
-        return !Files.exists(dir);
+        SandboxFsUtil.deleteTreeWithRetry(workDir);
     }
 
     @PreDestroy

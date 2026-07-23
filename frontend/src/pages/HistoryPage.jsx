@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import HistoryCard from '../components/history/HistoryCard'
 import HistorySkeleton from '../components/history/HistorySkeleton'
 import ExecutionHistoryCard from '../components/history/ExecutionHistoryCard'
+import InlineError from '../components/InlineError'
+import TabStrip from '../components/TabStrip'
 import { useAnalysisStore } from '../store/analysisStore'
 import { useExecutionStore } from '../store/executionStore'
 
@@ -68,9 +70,7 @@ function AnalysesTab({ query }) {
 
   return (
     <>
-      {error && !showSkeleton && (
-        <p className="mb-4 rounded-lg border border-correct/30 bg-correct/10 p-3 text-sm text-correct">{error}</p>
-      )}
+      {error && !showSkeleton && <InlineError className="mb-4">{error}</InlineError>}
       {showSkeleton ? (
         <HistorySkeleton />
       ) : history.length === 0 && !error ? (
@@ -104,9 +104,7 @@ function RunsTab() {
 
   return (
     <>
-      {error && !showSkeleton && (
-        <p className="mb-4 rounded-lg border border-correct/30 bg-correct/10 p-3 text-sm text-correct">{error}</p>
-      )}
+      {error && !showSkeleton && <InlineError className="mb-4">{error}</InlineError>}
       {showSkeleton ? (
         <HistorySkeleton />
       ) : history.length === 0 && !error ? (
@@ -147,26 +145,14 @@ function HistoryPage() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Filter by pattern…"
+                aria-label="Filter history by pattern"
                 className="w-56 rounded-lg border border-line bg-paper-raised py-2 pr-3 pl-9 font-mono text-sm text-ink placeholder:text-ink-soft focus:border-primary focus:outline-none"
               />
             </div>
           )}
         </div>
 
-        <div className="flex gap-1 border-b border-line">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`-mb-px border-b-2 px-4 py-2.5 font-mono text-sm font-semibold ${
-                tab === t.id ? 'border-primary text-ink' : 'border-transparent text-ink-soft hover:text-ink'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TabStrip tabs={TABS} activeId={tab} onChange={setTab} />
 
         {tab === 'analyses' ? <AnalysesTab query={query} /> : <RunsTab />}
       </div>

@@ -10,8 +10,15 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      # Was hardcoded to "update" with no dev/prod distinction - every other
+      # runtime knob in this file externalizes via an env var, this didn't.
+      # Defaults are unchanged (still auto-migrates, still logs SQL) so this
+      # is a no-op unless HIBERNATE_DDL_AUTO/JPA_SHOW_SQL are explicitly set -
+      # switching the default itself to "validate" isn't safe to do blind,
+      # since it's not known whether the deployed schema was ever created any
+      # other way than by this exact setting.
+      ddl-auto: ${HIBERNATE_DDL_AUTO:update}
+    show-sql: ${JPA_SHOW_SQL:true}
 
   data:
     redis:
@@ -20,6 +27,12 @@ spring:
 
 server:
   port: 8080
+
+cors:
+  # Comma-separated. The browser's Origin header must match one of these
+  # exactly (scheme+host+port) - see CorsConfig for why (Vercel's rewrite is
+  # server-side, so the original browser origin still reaches us).
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,https://codesense-ai-phi.vercel.app}
 
 llm:
   provider: ${LLM_PROVIDER:github-models}   # anthropic | gemini | ollama | github-models

@@ -1,9 +1,12 @@
 import { create } from 'zustand'
 import { getAnalysisById, getHistorySummaries, submitAnalysis } from '../api/analysisApi'
+import { extractErrorMessage, StaleRequestError } from '../lib/httpError'
 
-function extractErrorMessage(error) {
-  return error.response?.data?.error ?? error.message ?? 'Something went wrong'
-}
+// Bumped by submit()/fetchAnalysisById() and by reset() - mirrors
+// executionStore's executionRequestSeq. Without this, a stale submit()
+// response landing after Refresh silently repopulates currentAnalysis with
+// data the user already cleared.
+let analysisRequestSeq = 0
 
 export const useAnalysisStore = create((set) => ({
   currentAnalysis: null,
@@ -12,13 +15,17 @@ export const useAnalysisStore = create((set) => ({
   error: null,
 
   submit: async (codeSnippet, language = 'java') => {
+    const seq = ++analysisRequestSeq
     set({ isLoading: true, error: null })
     try {
       const analysis = await submitAnalysis(codeSnippet, language)
+      if (seq !== analysisRequestSeq) throw new StaleRequestError()
       set({ currentAnalysis: analysis, isLoading: false })
       return analysis
     } catch (error) {
-      set({ error: extractErrorMessage(error), isLoading: false })
+      if (seq === analysisRequestSeq) {
+        set({ error: extractErrorMessage(error), isLoading: false })
+      }
       throw error
     }
   },
@@ -34,13 +41,17 @@ export const useAnalysisStore = create((set) => ({
   },
 
   fetchAnalysisById: async (id) => {
+    const seq = ++analysisRequestSeq
     set({ isLoading: true, error: null })
     try {
       const analysis = await getAnalysisById(id)
+      if (seq !== analysisRequestSeq) throw new StaleRequestError()
       set({ currentAnalysis: analysis, isLoading: false })
       return analysis
     } catch (error) {
-      set({ error: extractErrorMessage(error), isLoading: false })
+      if (seq === analysisRequestSeq) {
+        set({ error: extractErrorMessage(error), isLoading: false })
+      }
       throw error
     }
   },
@@ -49,5 +60,8 @@ export const useAnalysisStore = create((set) => ({
 
   // Clears the current workspace analysis (used by the Refresh button). Leaves
   // `history` alone — that's list data, not part of the active workspace.
-  reset: () => set({ currentAnalysis: null, error: null, isLoading: false }),
+  reset: () => {
+    analysisRequestSeq++ // invalidate any submit()/fetchAnalysisById() still in flight
+    set({ currentAnalysis: null, error: null, isLoading: false })
+  },
 }))

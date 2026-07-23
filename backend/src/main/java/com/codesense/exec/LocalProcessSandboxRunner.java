@@ -1,5 +1,6 @@
 package com.codesense.exec;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,22 @@ class LocalProcessSandboxRunner implements SandboxRunner {
 
     private static final Pattern LISTENING_PATTERN =
             Pattern.compile("Listening for transport dt_socket at address: (\\d+)");
+
+    /**
+     * This bean only exists at all when execution.sandbox.type resolves to
+     * local-process - including the "unset" default (matchIfMissing = true
+     * above). That means a deploy that silently drops EXECUTION_SANDBOX_TYPE
+     * (typo'd env var, missing systemd EnvironmentFile, etc.) falls back here
+     * with zero indication anything is wrong. Fails loud instead of silent -
+     * doesn't change behavior (still starts, matching the documented "dev has
+     * no Docker" tradeoff), just makes a misconfigured deploy impossible to miss.
+     */
+    @PostConstruct
+    void warnIfUnisolated() {
+        log.warn("Execution sandbox is running in LOCAL-PROCESS mode: NO isolation - no network, memory, CPU, "
+                + "or filesystem restriction on executed code. This must never be active in any environment that "
+                + "accepts untrusted input. Set EXECUTION_SANDBOX_TYPE=docker to enable real isolation.");
+    }
 
     @Override
     public SandboxHandle start(Path classOutputDir, String mainClassName, Duration readinessTimeout) {

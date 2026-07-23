@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +22,6 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 /**
  * Python analogue of the Java compile→sandbox→JDI pipeline, collapsed into one
@@ -101,7 +99,7 @@ public class PythonExecutionHandler {
         Path workDir;
         try {
             workDir = Files.createTempDirectory("codesense-pyexec-");
-            widenForContainerUser(workDir);
+            SandboxFsUtil.widenForContainerUser(workDir);
             Files.writeString(workDir.resolve("main.py"), wrap.source(), StandardCharsets.UTF_8);
             Files.writeString(workDir.resolve("tracer.py"), tracer.tracerScript(), StandardCharsets.UTF_8);
             // As a file, not an argv literal: Windows argv quoting strips the
@@ -134,7 +132,7 @@ public class PythonExecutionHandler {
 
             return new ExecutionResponse(trace, wrap.source(), wrap.wrapped(), Instant.now());
         } finally {
-            deleteRecursively(workDir);
+            SandboxFsUtil.deleteTreeWithRetry(workDir);
         }
     }
 
@@ -571,28 +569,11 @@ public class PythonExecutionHandler {
                 workDir.resolve("limits.json").toString());
     }
 
-    /** Same lockdown flags as {@link DockerSandboxRunner} minus the port
-     * publish (nothing attaches to a Python run; stdout is the transport). */
+    /** Same lockdown flags as {@link DockerSandboxRunner} (shared via
+     * {@link DockerRunCommandBuilder}) minus the port publish (nothing
+     * attaches to a Python run; stdout is the transport). */
     private List<String> dockerCommand(Path workDir) {
-        List<String> command = new ArrayList<>();
-        command.add("docker");
-        command.add("run");
-        command.add("--rm");
-        command.add("--network");
-        command.add(dockerNetwork);
-        command.add("--memory");
-        command.add(dockerMemory);
-        command.add("--memory-swap");
-        command.add(dockerMemory);
-        command.add("--cpus");
-        command.add(dockerCpus);
-        command.add("--pids-limit");
-        command.add("128");
-        command.add("--read-only");
-        command.add("--tmpfs");
-        command.add("/tmp:rw,size=16m,mode=1777");
-        command.add("-v");
-        command.add(workDir.toAbsolutePath() + ":/work:ro");
+        List<String> command = DockerRunCommandBuilder.baseFlags(dockerNetwork, dockerMemory, dockerCpus, workDir);
         command.add("--name");
         command.add("codesense-pyexec-" + UUID.randomUUID());
         command.add("--entrypoint");
@@ -676,36 +657,6 @@ public class PythonExecutionHandler {
             t.join(2_000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-        }
-    }
-
-    /** Same POSIX-permission widening as JavaSourceCompiler.compile(): in docker
-     * mode the work dir is bind-mounted read-only into a container running as a
-     * different OS user ("sandbox"), and the createTempDirectory default of 700
-     * makes it unreadable there (found the hard way on the first Linux deploy -
-     * presents as the container not seeing the files at all). No-op on Windows. */
-    private static void widenForContainerUser(Path workDir) {
-        try {
-            if (workDir.getFileSystem().supportedFileAttributeViews().contains("posix")) {
-                Files.setPosixFilePermissions(workDir,
-                        java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
-            }
-        } catch (IOException e) {
-            log.warn("Could not widen work dir permissions for container user", e);
-        }
-    }
-
-    private static void deleteRecursively(Path dir) {
-        try (Stream<Path> walk = Files.walk(dir)) {
-            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.deleteIfExists(p);
-                } catch (IOException ignored) {
-                    // best-effort cleanup; temp dir reaping will catch stragglers
-                }
-            });
-        } catch (IOException ignored) {
-            // dir already gone
         }
     }
 

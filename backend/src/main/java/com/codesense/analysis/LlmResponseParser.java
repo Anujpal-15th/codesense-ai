@@ -20,7 +20,13 @@ final class LlmResponseParser {
         }
     }
 
+    /** @throws AnalysisFailedException if {@code raw} is null - a provider
+     *          response shape with no text (e.g. a tool-call/refusal) - rather
+     *          than a bare NullPointerException reaching the generic 500 handler. */
     static String stripCodeFences(String raw) {
+        if (raw == null) {
+            throw new AnalysisFailedException("Provider returned no text content to parse");
+        }
         String trimmed = raw.trim();
         if (trimmed.startsWith("```")) {
             trimmed = trimmed.replaceFirst("^```[a-zA-Z]*\\R?", "");

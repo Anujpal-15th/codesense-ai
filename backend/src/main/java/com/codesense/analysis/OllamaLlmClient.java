@@ -1,17 +1,13 @@
 package com.codesense.analysis;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
 
-@Slf4j
 @Service
 @ConditionalOnProperty(prefix = "llm", name = "provider", havingValue = "ollama")
 class OllamaLlmClient implements LlmClient {
@@ -39,26 +35,10 @@ class OllamaLlmClient implements LlmClient {
                 false,
                 "json"
         );
-
-        OllamaChatResponse response;
-        try {
-            response = ollamaRestClient.post()
-                    .uri("/api/chat")
-                    .body(request)
-                    .retrieve()
-                    .body(OllamaChatResponse.class);
-        } catch (RestClientResponseException e) {
-            log.warn("Ollama returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new AnalysisFailedException("Ollama returned " + e.getStatusCode(), e);
-        } catch (RestClientException e) {
-            throw new AnalysisFailedException("Failed to reach local Ollama server (is it running?)", e);
-        }
-
-        if (response == null || response.message() == null || response.message().content() == null) {
-            throw new AnalysisFailedException("Ollama returned an empty response");
-        }
-
-        return LlmResponseParser.parse("Ollama", response.message().content(), objectMapper);
+        String rawText = LlmClientSupport.callAndExtractText("Ollama",
+                () -> ollamaRestClient.post().uri("/api/chat").body(request).retrieve().body(OllamaChatResponse.class),
+                r -> r.message().content());
+        return LlmResponseParser.parse("Ollama", rawText, objectMapper);
     }
 
     @Override
@@ -72,25 +52,9 @@ class OllamaLlmClient implements LlmClient {
                 false,
                 null
         );
-
-        OllamaChatResponse response;
-        try {
-            response = ollamaRestClient.post()
-                    .uri("/api/chat")
-                    .body(request)
-                    .retrieve()
-                    .body(OllamaChatResponse.class);
-        } catch (RestClientResponseException e) {
-            log.warn("Ollama returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new AnalysisFailedException("Ollama returned " + e.getStatusCode(), e);
-        } catch (RestClientException e) {
-            throw new AnalysisFailedException("Failed to reach local Ollama server (is it running?)", e);
-        }
-
-        if (response == null || response.message() == null || response.message().content() == null) {
-            throw new AnalysisFailedException("Ollama returned an empty response");
-        }
-
-        return LlmResponseParser.stripCodeFences(response.message().content());
+        String rawText = LlmClientSupport.callAndExtractText("Ollama",
+                () -> ollamaRestClient.post().uri("/api/chat").body(request).retrieve().body(OllamaChatResponse.class),
+                r -> r.message().content());
+        return LlmResponseParser.stripCodeFences(rawText);
     }
 }

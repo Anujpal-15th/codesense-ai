@@ -1,24 +1,10 @@
 import { Link } from 'react-router-dom'
+import { formatDate, previewLines as previewLinesFrom } from '../../lib/historyFormatting'
 
-// First 3 non-blank lines of the code for an at-a-glance preview. The summary
-// endpoint sends a pre-truncated `codePreview`; fall back to `codeSnippet` in
-// case a full record is ever passed. Normalizes CRLF first — Monaco (and this
-// DB's stored snippets) use \r\n, which would otherwise leave a trailing \r.
+// The summary endpoint sends a pre-truncated `codePreview`; fall back to
+// `codeSnippet` in case a full record is ever passed.
 function previewLines(analysis) {
-  const source = analysis.codePreview ?? analysis.codeSnippet
-  if (!source) return []
-  return source
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .filter((line) => line.trim().length > 0)
-    .slice(0, 3)
-}
-
-function formatDate(createdAt) {
-  if (!createdAt) return ''
-  const d = new Date(createdAt)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  return previewLinesFrom(analysis.codePreview ?? analysis.codeSnippet)
 }
 
 function ComplexityBadge({ label, value }) {

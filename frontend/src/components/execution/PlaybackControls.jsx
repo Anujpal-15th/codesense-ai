@@ -71,6 +71,7 @@ function PlaybackControls() {
         max={lastIndex}
         value={currentStepIndex}
         onChange={(e) => goToStep(Number(e.target.value))}
+        aria-label={`Step ${currentStepIndex + 1} of ${trace.steps.length}`}
         className="flex-1 accent-primary"
       />
 

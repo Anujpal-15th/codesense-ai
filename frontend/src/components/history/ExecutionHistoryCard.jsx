@@ -1,20 +1,8 @@
 import { Link } from 'react-router-dom'
+import { formatDate, previewLines as previewLinesFrom } from '../../lib/historyFormatting'
 
 function previewLines(execution) {
-  const source = execution.codePreview
-  if (!source) return []
-  return source
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .filter((line) => line.trim().length > 0)
-    .slice(0, 3)
-}
-
-function formatDate(createdAt) {
-  if (!createdAt) return ''
-  const d = new Date(createdAt)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  return previewLinesFrom(execution.codePreview)
 }
 
 function OutcomeBadge({ outcome }) {
