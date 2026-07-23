@@ -33,7 +33,7 @@ class GeminiLlmClient implements LlmClient {
         GeminiRequest request = new GeminiRequest(
                 new GeminiSystemInstruction(List.of(new GeminiPart(SYSTEM_PROMPT))),
                 List.of(new GeminiContent("user", List.of(new GeminiPart(codeSnippet)))),
-                new GeminiGenerationConfig(1024)
+                new GeminiGenerationConfig(2048, new GeminiThinkingConfig(0))
         );
         String rawText = LlmClientSupport.callAndExtractText("Gemini",
                 () -> geminiRestClient.post().uri("/models/{model}:generateContent", model).body(request).retrieve().body(GeminiResponse.class),
@@ -46,7 +46,7 @@ class GeminiLlmClient implements LlmClient {
         GeminiRequest request = new GeminiRequest(
                 new GeminiSystemInstruction(List.of(new GeminiPart(systemPrompt))),
                 List.of(new GeminiContent("user", List.of(new GeminiPart(userMessage)))),
-                new GeminiGenerationConfig(4096)
+                new GeminiGenerationConfig(4096, new GeminiThinkingConfig(0))
         );
         String rawText = LlmClientSupport.callAndExtractText("Gemini",
                 () -> geminiRestClient.post().uri("/models/{model}:generateContent", model).body(request).retrieve().body(GeminiResponse.class),
