@@ -43,11 +43,11 @@ class AnthropicLlmClient implements LlmClient {
 
         ClaudeMessageResponse response;
         try {
-            response = anthropicRestClient.post()
+            response = RetryingLlmCall.call("Claude", () -> anthropicRestClient.post()
                     .uri("/messages")
                     .body(request)
                     .retrieve()
-                    .body(ClaudeMessageResponse.class);
+                    .body(ClaudeMessageResponse.class));
         } catch (RestClientResponseException e) {
             log.warn("Claude API returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
             throw new AnalysisFailedException("Claude API returned " + e.getStatusCode(), e);
@@ -74,11 +74,11 @@ class AnthropicLlmClient implements LlmClient {
 
         ClaudeMessageResponse response;
         try {
-            response = anthropicRestClient.post()
+            response = RetryingLlmCall.call("Claude", () -> anthropicRestClient.post()
                     .uri("/messages")
                     .body(request)
                     .retrieve()
-                    .body(ClaudeMessageResponse.class);
+                    .body(ClaudeMessageResponse.class));
         } catch (RestClientResponseException e) {
             log.warn("Claude API returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
             throw new AnalysisFailedException("Claude API returned " + e.getStatusCode(), e);

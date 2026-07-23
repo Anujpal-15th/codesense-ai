@@ -44,11 +44,11 @@ class GithubModelsLlmClient implements LlmClient {
 
         GithubModelsChatResponse response;
         try {
-            response = githubModelsRestClient.post()
+            response = RetryingLlmCall.call("GitHub Models", () -> githubModelsRestClient.post()
                     .uri("/chat/completions")
                     .body(request)
                     .retrieve()
-                    .body(GithubModelsChatResponse.class);
+                    .body(GithubModelsChatResponse.class));
         } catch (RestClientResponseException e) {
             log.warn("GitHub Models API returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
             throw new AnalysisFailedException("GitHub Models API returned " + e.getStatusCode(), e);
@@ -75,11 +75,11 @@ class GithubModelsLlmClient implements LlmClient {
 
         GithubModelsChatResponse response;
         try {
-            response = githubModelsRestClient.post()
+            response = RetryingLlmCall.call("GitHub Models", () -> githubModelsRestClient.post()
                     .uri("/chat/completions")
                     .body(request)
                     .retrieve()
-                    .body(GithubModelsChatResponse.class);
+                    .body(GithubModelsChatResponse.class));
         } catch (RestClientResponseException e) {
             log.warn("GitHub Models API returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
             throw new AnalysisFailedException("GitHub Models API returned " + e.getStatusCode(), e);

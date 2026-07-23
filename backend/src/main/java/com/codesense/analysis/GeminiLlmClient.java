@@ -42,11 +42,11 @@ class GeminiLlmClient implements LlmClient {
 
         GeminiResponse response;
         try {
-            response = geminiRestClient.post()
+            response = RetryingLlmCall.call("Gemini", () -> geminiRestClient.post()
                     .uri("/models/{model}:generateContent", model)
                     .body(request)
                     .retrieve()
-                    .body(GeminiResponse.class);
+                    .body(GeminiResponse.class));
         } catch (RestClientResponseException e) {
             log.warn("Gemini API returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
             throw new AnalysisFailedException("Gemini API returned " + e.getStatusCode(), e);
@@ -76,11 +76,11 @@ class GeminiLlmClient implements LlmClient {
 
         GeminiResponse response;
         try {
-            response = geminiRestClient.post()
+            response = RetryingLlmCall.call("Gemini", () -> geminiRestClient.post()
                     .uri("/models/{model}:generateContent", model)
                     .body(request)
                     .retrieve()
-                    .body(GeminiResponse.class);
+                    .body(GeminiResponse.class));
         } catch (RestClientResponseException e) {
             log.warn("Gemini API returned {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
             throw new AnalysisFailedException("Gemini API returned " + e.getStatusCode(), e);
