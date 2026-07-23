@@ -29,6 +29,7 @@ application-secrets.yaml
 CLAUDE.md
 implementation-notes.md
 CHECKLIST.md
+memory.md
 
 # IDE
 .idea/
