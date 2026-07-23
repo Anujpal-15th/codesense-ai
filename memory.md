@@ -47,7 +47,7 @@ codesense-ai/
 ```
 Browser ─► Vercel (static frontend + /api/* rewrite) ─► Azure VM :8080 (Spring Boot) ─► Neon (Postgres)
                                                               │
-                                                              ├─► LLM provider (GitHub Models by default)
+                                                              ├─► LLM provider (Google Gemini by default)
                                                               └─► Execution sandbox (Docker on Linux / local process in dev)
 ```
 
@@ -60,23 +60,38 @@ Browser ─► Vercel (static frontend + /api/* rewrite) ─► Azure VM :8080 (
   (LLM analysis + persistence) and `com.codesense.exec` (real code execution + tracing),
   with `com.codesense.config` for CORS, rate limiting, and per-provider LLM client beans,
   and `com.codesense.validation` for the shared submission validator.
-- **Database** — PostgreSQL, hosted on Neon in production. Only analyses are persisted
-  (the `analysis` table plus three element-collection tables for bugs/edge-cases/tips).
-  Executions are **not** persisted — traces can be large and are returned synchronously.
-- **No auth.** Users are distinguished by a random `userId` generated in the browser
-  (`localStorage['codesense-user-id']`) and sent as the `X-User-Id` header. History is
-  scoped to that id. No login, no passwords. See *Session-based user isolation* below.
+- **Database** — PostgreSQL, hosted on Neon in production. Both analyses and executions
+  are persisted (`analysis` + its bugs/edge-cases/tips element-collection tables, and
+  `execution_history` with the full trace as `TEXT` JSON), each best-effort and scoped to
+  the caller's `X-User-Id` — a save failure never fails the response the work already
+  earned. Both have a `GET .../summary` (lightweight list) + `GET .../{id}` (full record,
+  owner-checked) pair; see *Key backend endpoints*.
+- **No login, but identity is server-signed, not client-trusted.** `X-User-Id` scopes
+  history to "whoever submitted it" with no accounts/passwords - but the id itself is no
+  longer an arbitrary string the client makes up. `GET /api/identity` mints
+  `<uuid>.<HMAC-SHA256 signature>` (`UserIdentityService`); `UserIdentityFilter` verifies
+  the signature on every request and silently strips the header (degrading to anonymous,
+  never an error) if it doesn't verify. Before this, the backend trusted any string handed
+  to it outright - a captured or guessed id worked exactly as well as the real one. The
+  frontend (`lib/userId.js`) fetches its id from that endpoint once and caches it in
+  localStorage, instead of generating its own UUID. See *Session-based user isolation*
+  below for the full rationale and what this still doesn't solve (leaked-token replay).
 
 ### Key backend endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET`  | `/api/identity` | Mints a fresh signed `X-User-Id` token (`UserIdentityService`). The frontend calls this once and caches the result; no request body. |
 | `POST` | `/api/analyses` | Analyze a snippet with the LLM, persist it, return the full result. Body: `{codeSnippet, language}`. |
 | `GET`  | `/api/analyses/summary` | Lightweight history list for the current `X-User-Id` (scalar columns only, no heavy TEXT/collection loads). |
 | `GET`  | `/api/analyses/{id}` | Full analysis by id — **only if it belongs to the caller's `X-User-Id`** (else 404). |
-| `POST` | `/api/executions` | Compile+run (Java) or run (Python) and return an `ExecutionTrace`. Body: `{sourceCode, language}`. Not persisted. |
+| `POST` | `/api/executions` | Compile+run (Java) or run (Python), persist it, return the full `ExecutionTrace`. Body: `{sourceCode, language}`. |
+| `GET`  | `/api/executions/summary` | Lightweight run history list for the current `X-User-Id`. |
+| `GET`  | `/api/executions/{id}` | Full execution record (incl. trace + source) by id — owner-checked, same 404-on-mismatch pattern as analyses. |
 
-Both POST endpoints are rate-limited per IP (see *Rate limiting*).
+Both POST endpoints are rate-limited per IP; the two `GET .../{id}` endpoints have a
+lighter, generic-abuse-only rate limit (not an authorization boundary — see
+*Rate limiting*).
 
 ---
 
@@ -194,10 +209,26 @@ one implementation is active per run, chosen by `llm.provider` (env `LLM_PROVIDE
 
 | provider | client | model (default) | notes |
 |---|---|---|---|
-| `github-models` (**default**) | `GithubModelsLlmClient` | `openai/gpt-4o-mini` | free tier, fast, good quality; needs a GitHub PAT with `models: read`. |
+| `gemini` (**default**) | `GeminiLlmClient` | `gemini-flash-latest` | needs `GEMINI_API_KEY`; free tier, no card. Uses Google's `-latest` alias (not a pinned version) deliberately - see the gotcha below. |
 | `anthropic` | `AnthropicLlmClient` | `claude-sonnet-5` | needs `ANTHROPIC_API_KEY`. |
-| `gemini` | `GeminiLlmClient` | `gemini-2.0-flash` | needs `GEMINI_API_KEY`. |
+| `github-models` | `GithubModelsLlmClient` | `openai/gpt-4o-mini` | **retired by GitHub on 2026-07-30 - do not re-select this provider**, the API no longer exists. Client code left in place only as a reference/example of the pattern. |
 | `ollama` | `OllamaLlmClient` | `llama3.2:1b` | fully local/offline, no key; slower and less reliable for the structured prompt. |
+
+**Gotcha - don't pin a specific Gemini model version.** `gemini.model` was originally
+`gemini-2.0-flash`, hardcoded. Google retired its free-tier quota for that model, so it was
+changed to `gemini-2.5-flash` - which *also* lost free-tier access within the same day
+("no longer available to new users"). Pinning any specific dated model name is a
+recurring-outage risk with how fast Google rotates the free tier. Fixed by switching to
+Google's own `gemini-flash-latest` alias, which is documented as "hot-swapped with every
+new release" - this should never need updating again regardless of what Google ships next,
+and the days-scale churn is why it's not safe to assume a currently-working pinned name
+will still work next week. Also relevant: newer Gemini "thinking" models spend part of
+`maxOutputTokens` on an internal reasoning pass before the actual answer, which was
+silently truncating/corrupting the JSON response until the budget was raised to 8192 to
+give both passes room (`GeminiLlmClient`). A `thinkingConfig.thinkingBudget=0` field to
+disable thinking outright was tried and reverted - Gemini rejected it with a generic 400
+on this account's model, and the exact schema for it isn't stable enough across model
+generations to be worth chasing; the larger token budget sidesteps the question entirely.
 
 Each provider's client + its `RestClient` config bean are gated with
 `@ConditionalOnProperty` so only the selected one is instantiated — the other providers'
@@ -277,27 +308,46 @@ renders those as a graceful "not available," never a fabricated value.
   single origin.
 - **Neon for Postgres.** Managed, serverless Postgres — no database to run on the VM, and it
   survives VM rebuilds.
-- **No auth, session-based isolation.** For a portfolio/demo tool, a full auth system is
-  overkill and a barrier to trying it. A random browser-generated `userId` is enough to keep
-  each visitor's history separate without any login. See the note below.
+- **No login, but identity is server-signed.** For a portfolio/demo tool, a full auth
+  system is overkill and a barrier to trying it. `X-User-Id` keeps each visitor's history
+  separate without any login - but see the note below on why it's server-signed rather
+  than client-trusted.
 
 ### Session-based user isolation (important subtlety)
 
-History is scoped by the `X-User-Id` header. One non-obvious trap: Spring Data JPA derived
-queries turn `findBy…AndUserId(id, null)` into `… AND user_id IS NULL`, which would match
-the *legacy* rows that predate the column (they have `NULL` userId). So the service layer
-short-circuits null/blank userId to "empty list" / "404" *before* hitting the repository —
-a missing header must mean "no history," never "everyone's history" and never "the orphaned
-legacy rows."
+History is scoped by the `X-User-Id` header. Two non-obvious traps here, one old and one
+found later:
+
+1. Spring Data JPA derived queries turn `findBy…AndUserId(id, null)` into
+   `… AND user_id IS NULL`, which would match the *legacy* rows that predate the column
+   (they have `NULL` userId). So the service layer short-circuits null/blank userId to
+   "empty list" / "404" *before* hitting the repository - a missing header must mean "no
+   history," never "everyone's history" and never "the orphaned legacy rows."
+2. **The id itself used to be trusted outright.** The frontend generated a random UUID
+   client-side and the backend accepted *any* string in the header verbatim - a captured
+   or guessed id worked exactly as well as the real one, since nothing distinguished
+   "an id we issued" from "a string someone typed in." Fixed with `UserIdentityService`
+   (HMAC-signs every id the server mints via `GET /api/identity`) + `UserIdentityFilter`
+   (verifies the signature on every request, silently degrading an invalid one to "no
+   header sent" rather than trusting or erroring on it). This does **not** solve
+   capture/replay - a leaked *signed* id is just as reusable as a leaked unsigned one was;
+   that needs real sessions/login, out of scope for a no-login tool. What it removes is
+   trivial forgery: before, typing any string into the header worked; now it must be a
+   token this server actually minted.
 
 ### Rate limiting
 
 `RateLimitFilter` (Bucket4j, in-memory Caffeine cache of IP → bucket) limits the two
-expensive POST endpoints: `/api/analyses` (external LLM cost) and `/api/executions`
-(compiles + spawns a process — the real DoS surface). GET history reads are not limited.
-`X-Forwarded-For` is only trusted when the direct peer is in `rate-limit.trusted-proxies`,
-so a client hitting the backend directly can't spoof its source IP. Behind the reverse
-proxy on the deployment host, add that proxy's address to `trusted-proxies`.
+expensive POST endpoints (`/api/analyses` - external LLM cost; `/api/executions` - compiles
++ spawns a process, the real DoS surface) plus a much more generous limit on the two
+single-record `GET .../{id}` reads (plain DB queries, so this is abuse/resource
+protection only - **not** an authorization boundary, since both already scope by
+`findByIdAndUserId` and the caller's own summary endpoint already hands back every id
+they're allowed to read). The summary list endpoints stay unlimited - a single cheap query
+each, not id-driven. `X-Forwarded-For` is only trusted when the direct peer is in
+`rate-limit.trusted-proxies`, so a client hitting the backend directly can't spoof its
+source IP. Behind the reverse proxy on the deployment host, add that proxy's address to
+`trusted-proxies`.
 
 ---
 
@@ -315,9 +365,10 @@ proxy on the deployment host, add that proxy's address to `trusted-proxies`.
   checks.
 - **`local-process` sandbox has no isolation.** Fine for local dev, unacceptable for any
   public host — production must use `docker`.
-- **No execution history.** Traces aren't persisted, so you can't revisit a past run's
-  visualization. The `X-User-Id` header is already plumbed through the execution endpoint
-  for when this is added.
+- **Bearer-token replay is still possible.** A captured *signed* `X-User-Id` is just as
+  reusable as the old unsigned scheme was - the signing (see *Session-based user
+  isolation*) only stops forgery, not theft-and-reuse of a real token. Closing that needs
+  real sessions/login.
 - **LLM label variance.** Even with the guards, the same snippet can get slightly different
   pattern labels run to run (e.g. a hash-map two-sum sometimes called "Two Pointers"). The
   guards only remove *provably* wrong claims, not merely debatable ones.
@@ -370,23 +421,45 @@ That's it — because every language emits the same trace JSON, the entire Visua
 
 Everything is automated through GitHub Actions on push to `main`
 (`.github/workflows/deploy.yml`). Jobs run in order: **build** → **deploy (backend)** →
-**deploy-frontend (Vercel)** → **smoke-test**.
+**deploy-frontend (Vercel)** → **smoke-test**. `deploy-frontend` and `smoke-test` both
+`needs: deploy` - if the backend deploy job fails, the frontend deploy is **skipped
+entirely**, even for a frontend-only change. Known gap, not yet fixed: frontend deploys
+shouldn't be hostage to backend deploy health.
 
 **Backend (Azure VM, `codesense` systemd service, port 8080):**
-- The deploy job SSHes into the VM and runs
+- The deploy job SSHes into the VM (key auth, non-interactive - no TTY) and runs
   `git fetch origin main && git reset --hard origin/main` (reset, not pull, so a
   force-pushed history doesn't cause a merge conflict), then
-  `mvn clean package -DskipTests`, `systemctl restart codesense`, and a health check
+  `mvn clean package -DskipTests`, `sudo systemctl restart codesense`, and a health check
   against `/api/analyses`.
 - Requires on the VM: JDK 17, Maven, **Python 3** (for the Python execution path), and —
   for the real sandbox — Docker with the provisioned sandbox network + iptables rule and
-  the `codesense/execution-sandbox` image built. The systemd unit sets the DB env
-  (`DB_USERNAME=neondb_owner`, connection string/password from the unit environment) and
-  the `GITHUB_MODELS_TOKEN`.
-- CORS: `CorsConfig` must allow the Vercel origin. Vercel rewrites `/api/*` server-side,
-  which forwards the browser's `Origin` header to the backend, so the backend's CORS list
-  must include `https://codesense-ai-phi.vercel.app` (not just localhost) or every request
-  is rejected with "Invalid CORS request."
+  the `codesense/execution-sandbox` image built. The systemd unit (plus a
+  `codesense.service.d/override.conf` drop-in for the identity secret) sets the DB env
+  (`DB_USERNAME=neondb_owner`, connection string/password), `GEMINI_API_KEY`, and
+  `USER_IDENTITY_SECRET` - all as plain `Environment=` lines, no external secrets manager.
+- CORS: `cors.allowed-origins` (env `CORS_ALLOWED_ORIGINS`) must include the Vercel origin.
+  Vercel rewrites `/api/*` server-side, which forwards the browser's `Origin` header to the
+  backend, so the backend's CORS list must include `https://codesense-ai-phi.vercel.app`
+  (not just localhost) or every request is rejected with "Invalid CORS request."
+
+**Gotcha - `sudo` on the deploy VM must stay passwordless for `azureuser`, and it's
+fragile.** The deploy script's `sudo systemctl restart codesense` runs over a
+non-interactive SSH session with no TTY - if sudo ever decides a password is needed, the
+whole deploy job fails with `sudo: a password is required`, no matter how many times you
+re-run it. This actually happened: resetting `azureuser`'s login password via the Azure
+Portal (done to get Serial Console access working) appears to disturb the account's sudo
+grants. The fix is **not** just "add a NOPASSWD sudoers rule" - `/etc/sudoers.d/*` files
+are read in **alphabetical order**, and for a command matching multiple rules, **the last
+one read wins**, regardless of specificity. A pre-existing Azure-managed file
+(`/etc/sudoers.d/waagent`) sorts after a naively-named override and was silently winning
+with a password-requiring catch-all, even though earlier files granted NOPASSWD. The
+working fix: `/etc/sudoers.d/zzz-azureuser-nopasswd` containing
+`azureuser ALL=(ALL) NOPASSWD:ALL` - the `zzz` prefix guarantees it sorts last among
+everything in that directory. Diagnose this class of problem with `sudo -n -l` (shows the
+full *effective* rule list in evaluation order - the last line is the one that actually
+applies) rather than trusting `visudo -c` alone (that only validates syntax, not which
+rule wins).
 
 **Frontend (Vercel, primary URL `codesense-ai-phi.vercel.app`):**
 - The deploy-frontend job runs `npm ci && npm run build` (fast-fail gate) then
@@ -401,8 +474,9 @@ Everything is automated through GitHub Actions on push to `main`
 `ddl-auto: update` on first backend startup.
 
 **Local development:**
-- Backend: from `backend/`, set `DB_USERNAME` / `DB_PASSWORD` / `GITHUB_MODELS_TOKEN`,
-  have Postgres reachable, then `mvn spring-boot:run` (:8080).
+- Backend: from `backend/`, set `DB_USERNAME` / `DB_PASSWORD` / `GEMINI_API_KEY` (or
+  another provider's key + `LLM_PROVIDER`), have Postgres reachable, then
+  `mvn spring-boot:run` (:8080).
 - Frontend: from `frontend/`, `npm install` then `npm run dev` (:5173). It talks to
   `http://localhost:8080` by default; override with `VITE_API_BASE_URL` (a `.env.local`
   pointing at a remote backend is handy but remember it's loaded in dev too).
@@ -430,8 +504,8 @@ Everything is automated through GitHub Actions on push to `main`
 | Sandbox | **Docker** (prod) / plain process (dev) | Resource + filesystem + egress isolation for untrusted code. |
 | Rate limiting | **Bucket4j** + **Caffeine** | Per-IP token-bucket on expensive endpoints, in-memory. |
 | Boilerplate | **Lombok** | Getters/setters/constructors on entities and records. |
-| LLM (default) | **GitHub Models** (`gpt-4o-mini`) | Free tier, fast, good quality for the structured prompt. |
-| LLM (alternates) | **Anthropic** (`claude-sonnet-5`), **Google Gemini** (`gemini-2.0-flash`), **Ollama** (local) | Pluggable providers behind one `LlmClient` interface. |
+| LLM (default) | **Google Gemini** (`gemini-flash-latest`) | Free tier, no card required. Uses Google's `-latest` alias, not a pinned version - see the gotcha in *The pluggable LLM provider*. |
+| LLM (alternates) | **Anthropic** (`claude-sonnet-5`), **Ollama** (local) | Pluggable behind one `LlmClient` interface. GitHub Models was the original default but was fully retired by GitHub on 2026-07-30 - do not re-enable it. |
 | Frontend hosting | **Vercel** | CDN static hosting + auto-deploy + `/api/*` rewrite to the backend. |
 | Backend hosting | **Azure VM** (systemd) | Needs a real JVM + JDK compiler + Docker; a plain VM fits, serverless doesn't. |
 | CI/CD | **GitHub Actions** | Build → deploy backend (SSH) → deploy frontend (Vercel CLI) → smoke test, on push to `main`. |
