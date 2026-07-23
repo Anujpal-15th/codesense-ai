@@ -52,11 +52,15 @@ anthropic:
 
 gemini:
   api-key: ${GEMINI_API_KEY:}
-  # gemini-2.0-flash has 0 free-tier quota as of the 2.5 generation rollout -
-  # the free tier now applies to gemini-2.5-flash/flash-lite instead. Externalized
-  # via env var (matching github-models.model below) so a future model
-  # retirement doesn't require a code change to recover from.
-  model: ${GEMINI_MODEL:gemini-2.5-flash}
+  # A pinned version (gemini-2.0-flash, then gemini-2.5-flash) went stale
+  # twice within this same deploy - Google retires specific model versions
+  # fast enough that hardcoding one is a recurring outage waiting to happen.
+  # "gemini-flash-latest" is Google's own alias for exactly this problem -
+  # per their docs it's "hot-swapped with every new release", so this never
+  # needs to be updated again as newer flash generations ship. Still
+  # env-overridable (matching github-models.model below) in case a pinned
+  # version is ever wanted for reproducibility.
+  model: ${GEMINI_MODEL:gemini-flash-latest}
 
 ollama:
   model: ${OLLAMA_MODEL:llama3.2:1b}
