@@ -30,4 +30,9 @@ public class ExecutionExceptionHandler {
     public ResponseEntity<ErrorResponse> handleExecutionFailed(ExecutionFailedException ex) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(new ErrorResponse(ex.getMessage()));
     }
+
+    @ExceptionHandler(ExecutionNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotFound(ExecutionNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(ex.getMessage()));
+    }
 }

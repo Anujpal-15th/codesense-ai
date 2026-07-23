@@ -1,5 +1,6 @@
 import { NavLink, Outlet, Route, Routes } from 'react-router-dom'
 import AnalysisDetailPage from './pages/AnalysisDetailPage'
+import ExecutionHistoryLoaderPage from './pages/ExecutionHistoryLoaderPage'
 import HistoryPage from './pages/HistoryPage'
 import LandingPage from './pages/LandingPage'
 import WorkspacePage from './pages/WorkspacePage'
@@ -43,6 +44,7 @@ function App() {
       <Route element={<AppShell />}>
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/history/:id" element={<AnalysisDetailPage />} />
+        <Route path="/history/executions/:id" element={<ExecutionHistoryLoaderPage />} />
       </Route>
     </Routes>
   )

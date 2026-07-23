@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { submitExecution } from '../api/executionApi'
+import { getExecutionHistoryById, getExecutionHistorySummaries, submitExecution } from '../api/executionApi'
 
 function extractErrorMessage(error) {
   return error.response?.data?.error ?? error.message ?? 'Something went wrong'
@@ -27,6 +27,13 @@ export const useExecutionStore = create((set, get) => ({
   currentStepIndex: 0,
   isPlaying: false,
 
+  // Past executions (X-User-Id scoped, no login - see ExecutionHistory on the
+  // backend). Separate loading/error flags from the live run above so
+  // fetching the history list never clobbers an in-progress Run/Submit.
+  history: [],
+  isHistoryLoading: false,
+  historyError: null,
+
   submit: async (sourceCode, language = 'java') => {
     get().pause()
     set({
@@ -50,6 +57,41 @@ export const useExecutionStore = create((set, get) => ({
         currentStepIndex: 0,
       })
       return response
+    } catch (error) {
+      set({ error: extractErrorMessage(error), isLoading: false })
+      throw error
+    }
+  },
+
+  fetchHistory: async () => {
+    set({ isHistoryLoading: true, historyError: null })
+    try {
+      const history = await getExecutionHistorySummaries()
+      set({ history, isHistoryLoading: false })
+    } catch (error) {
+      set({ historyError: extractErrorMessage(error), isHistoryLoading: false })
+    }
+  },
+
+  /** Loads a past execution back into the SAME live trace state Run/Submit
+   * populate, so the Visualize tab renders it identically - no separate
+   * "history detail" rendering path to keep in sync. Returns the full detail
+   * response (incl. sourceCode/language) so the caller can also restore the
+   * editor and language selector, which live in workspaceStore, not here. */
+  loadFromHistory: async (id) => {
+    get().pause()
+    set({ isLoading: true, error: null })
+    try {
+      const detail = await getExecutionHistoryById(id)
+      set({
+        trace: detail.trace,
+        createdAt: detail.createdAt,
+        wasWrapped: detail.wasWrapped,
+        tracedSource: detail.executedSourceCode,
+        isLoading: false,
+        currentStepIndex: 0,
+      })
+      return detail
     } catch (error) {
       set({ error: extractErrorMessage(error), isLoading: false })
       throw error

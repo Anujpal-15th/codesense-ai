@@ -1,6 +1,7 @@
 package com.codesense.exec;
 
 import com.codesense.validation.CodeSubmissionValidator;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -8,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 @Slf4j
@@ -26,6 +28,8 @@ public class ExecutionService {
     private final JavaTracer tracer;
     private final PythonExecutionHandler pythonExecutionHandler;
     private final CodeSubmissionValidator submissionValidator;
+    private final ExecutionHistoryRepository executionHistoryRepository;
+    private final ObjectMapper objectMapper;
     private final Duration readinessTimeout;
 
     public ExecutionService(JavaSourceCompiler compiler,
@@ -36,6 +40,8 @@ public class ExecutionService {
                              JavaTracer tracer,
                              PythonExecutionHandler pythonExecutionHandler,
                              CodeSubmissionValidator submissionValidator,
+                             ExecutionHistoryRepository executionHistoryRepository,
+                             ObjectMapper objectMapper,
                              @Value("${execution.sandbox.readiness-timeout-seconds}") long readinessTimeoutSeconds) {
         this.compiler = compiler;
         this.entryPointDetector = entryPointDetector;
@@ -45,6 +51,8 @@ public class ExecutionService {
         this.tracer = tracer;
         this.pythonExecutionHandler = pythonExecutionHandler;
         this.submissionValidator = submissionValidator;
+        this.executionHistoryRepository = executionHistoryRepository;
+        this.objectMapper = objectMapper;
         this.readinessTimeout = Duration.ofSeconds(readinessTimeoutSeconds);
     }
 
@@ -53,11 +61,9 @@ public class ExecutionService {
      *                 pre-language clients (and the regression suite's plain
      *                 {@code {sourceCode}} payloads) keep working unchanged.
      * @param userId   opaque client-generated id from the X-User-Id header, or
-     *                 null if absent. Executions aren't persisted at all yet
-     *                 (see ExecutionResponse - no DB row), so there's nothing to
-     *                 scope by owner today; accepted now so the header threads
-     *                 through the same path analyses use, ready for whenever
-     *                 execution history exists.
+     *                 null if absent. Only persisted to history when present -
+     *                 see {@link #persistIfOwned}, mirroring AnalysisService's
+     *                 same no-login, userId-scoped pattern.
      */
     public ExecutionResponse execute(String sourceCode, String language, String userId) {
         String lang = language == null || language.isBlank()
@@ -69,10 +75,68 @@ public class ExecutionService {
         submissionValidator.validate(sourceCode, lang);
         log.debug("Execution request: language={} userId={}", lang, userId);
 
-        if ("python".equals(lang)) {
-            return pythonExecutionHandler.execute(sourceCode);
+        ExecutionResponse response = "python".equals(lang)
+                ? pythonExecutionHandler.execute(sourceCode)
+                : executeJava(sourceCode);
+        persistIfOwned(response, sourceCode, lang, userId);
+        return response;
+    }
+
+    /**
+     * Best-effort: a history-save failure must never take down a response the
+     * user's execution already earned on its own merits, so any exception here
+     * (serialization, DB hiccup) is logged and swallowed, not rethrown - exactly
+     * the same "the real work already succeeded" reasoning as
+     * {@link com.codesense.exec.PythonExecutionHandler} not letting a
+     * best-effort cleanup step fail the request. Skipped entirely for anonymous
+     * callers (no X-User-Id) since there's no history list a no-login row could
+     * ever appear in.
+     */
+    private void persistIfOwned(ExecutionResponse response, String sourceCode, String language, String userId) {
+        if (userId == null || userId.isBlank()) {
+            return;
         }
-        return executeJava(sourceCode);
+        try {
+            ExecutionHistory history = new ExecutionHistory();
+            history.setUserId(userId);
+            history.setLanguage(language);
+            history.setSourceCode(sourceCode);
+            history.setExecutedSourceCode(response.executedSourceCode());
+            history.setWasWrapped(response.wasWrapped());
+            history.setOutcome(response.trace().outcome().name());
+            history.setConsoleOutput(response.trace().consoleOutput());
+            history.setTotalStepsCaptured(response.trace().totalStepsCaptured());
+            history.setTraceJson(objectMapper.writeValueAsString(response.trace()));
+            executionHistoryRepository.save(history);
+        } catch (Exception e) {
+            log.warn("Failed to persist execution history (execution itself already succeeded)", e);
+        }
+    }
+
+    /** @param userId no header sent -> empty list, not an error - see
+     *                {@code AnalysisService#getHistorySummaries}. */
+    public List<ExecutionHistorySummaryResponse> getHistorySummaries(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return List.of();
+        }
+        return executionHistoryRepository.findSummariesByUserId(userId);
+    }
+
+    /** @param userId must match the row's owner or this 404s exactly like a
+     *                nonexistent id - see {@code AnalysisService#getById}. */
+    public ExecutionHistoryDetailResponse getById(Long id, String userId) {
+        if (userId == null || userId.isBlank()) {
+            throw new ExecutionNotFoundException(id);
+        }
+        ExecutionHistory history = executionHistoryRepository.findByIdAndUserId(id, userId)
+                .orElseThrow(() -> new ExecutionNotFoundException(id));
+        ExecutionTrace trace;
+        try {
+            trace = objectMapper.readValue(history.getTraceJson(), ExecutionTrace.class);
+        } catch (Exception e) {
+            throw new ExecutionFailedException("Stored execution trace is corrupted", e);
+        }
+        return ExecutionHistoryDetailResponse.from(history, trace);
     }
 
     private ExecutionResponse executeJava(String sourceCode) {
