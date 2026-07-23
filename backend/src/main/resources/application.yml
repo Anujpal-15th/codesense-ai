@@ -52,7 +52,11 @@ anthropic:
 
 gemini:
   api-key: ${GEMINI_API_KEY:}
-  model: gemini-2.0-flash
+  # gemini-2.0-flash has 0 free-tier quota as of the 2.5 generation rollout -
+  # the free tier now applies to gemini-2.5-flash/flash-lite instead. Externalized
+  # via env var (matching github-models.model below) so a future model
+  # retirement doesn't require a code change to recover from.
+  model: ${GEMINI_MODEL:gemini-2.5-flash}
 
 ollama:
   model: ${OLLAMA_MODEL:llama3.2:1b}
