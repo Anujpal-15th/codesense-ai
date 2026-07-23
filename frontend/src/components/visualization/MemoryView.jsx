@@ -69,6 +69,11 @@ function MemoryView() {
         stored in one, Java automatically wraps (&ldquo;boxes&rdquo;) it in a small object — that&rsquo;s the
         Integer you&rsquo;re seeing.
       </p>
+      <p>
+        <strong className="text-ink">&ldquo;went out of scope&rdquo;</strong> — the method holding the last
+        reference to that object just returned, so nothing can reach it anymore. It hasn&rsquo;t crashed or been
+        deleted — it just isn&rsquo;t visible from here any longer.
+      </p>
     </InfoToggle>
   )
 
@@ -82,8 +87,9 @@ function MemoryView() {
   }
 
   const entries = collectObjectRefs(step)
+  const removed = [...changes.removedObjects]
 
-  if (entries.length === 0) {
+  if (entries.length === 0 && removed.length === 0) {
     return (
       <>
         {explainer}
@@ -97,6 +103,14 @@ function MemoryView() {
   return (
     <>
       {explainer}
+      {removed.length > 0 && (
+        <div
+          key={`removed-${changes.tick}`}
+          className="value-flash mb-2 rounded-md border border-highlight-ink/30 bg-highlight-ink/10 p-2 font-mono text-xs text-highlight-ink"
+        >
+          Went out of scope: {removed.map(([hash, type]) => `${type} #${hash}`).join(', ')}
+        </div>
+      )}
       <div className="space-y-2">
         {entries.map(({ objectSummary, referencedBy }) => {
           const aliased = referencedBy.size > 1

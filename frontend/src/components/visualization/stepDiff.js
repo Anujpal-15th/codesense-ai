@@ -16,6 +16,7 @@ export const EMPTY_CHANGES = {
   changedHashes: new Set(),
   newFrameDepths: new Set(),
   newObjectHashes: new Set(),
+  removedObjects: new Map(),
   tick: 0,
 }
 
@@ -54,7 +55,8 @@ export function computeStepChanges(trace, index) {
       added: new Set(),
       changedHashes: new Set(),
       newFrameDepths: allFrameDepths(curr),
-      newObjectHashes: new Set(signaturesByHash(curr).keys()),
+      newObjectHashes: new Set(objectInfoByHash(curr).keys()),
+      removedObjects: new Map(),
       tick: index,
     }
   }
@@ -84,7 +86,8 @@ export function computeStepChanges(trace, index) {
   const changedHashes = computeChangedHashes(prev, curr)
   const newFrameDepths = computeNewFrameDepths(prev, curr)
   const newObjectHashes = computeNewObjectHashes(prev, curr)
-  return { changed, added, changedHashes, newFrameDepths, newObjectHashes, tick: index }
+  const removedObjects = computeRemovedObjects(prev, curr)
+  return { changed, added, changedHashes, newFrameDepths, newObjectHashes, removedObjects, tick: index }
 }
 
 function allFrameDepths(step) {
@@ -120,13 +123,33 @@ function computeNewFrameDepths(prev, curr) {
 
 /** identityHashes present in curr's heap walk but absent from prev's - i.e. objects allocated since the last-rendered step. */
 function computeNewObjectHashes(prev, curr) {
-  const prevHashes = new Set(signaturesByHash(prev).keys())
-  const currHashes = signaturesByHash(curr)
+  const prevHashes = new Set(objectInfoByHash(prev).keys())
+  const currHashes = objectInfoByHash(curr)
   const fresh = new Set()
   for (const hash of currHashes.keys()) {
     if (!prevHashes.has(hash)) fresh.add(hash)
   }
   return fresh
+}
+
+/**
+ * The mirror image of computeNewObjectHashes: objects reachable from prev's
+ * call stack that are NOT reachable from curr's - most often because a
+ * method that held the last reference to them just returned. Without this,
+ * an object simply vanishes from the Memory panel with no explanation,
+ * which reads as a bug rather than the normal "went out of scope" it
+ * actually is. Returns identityHash -> type (from prev, since curr no
+ * longer has it) so the panel can say WHAT disappeared, not just that
+ * something did.
+ */
+function computeRemovedObjects(prev, curr) {
+  const prevInfo = objectInfoByHash(prev)
+  const currHashes = new Set(objectInfoByHash(curr).keys())
+  const removed = new Map()
+  for (const [hash, info] of prevInfo) {
+    if (!currHashes.has(hash)) removed.set(hash, info.type)
+  }
+  return removed
 }
 
 function diffFrameVars(prevFrame, currFrame, changed, added) {
@@ -209,37 +232,45 @@ function diffValue(prev, curr, path, changed, added) {
  * Compared by a cheap shallow signature (direct field/element leaf literals).
  */
 function computeChangedHashes(prev, curr) {
-  const prevSig = signaturesByHash(prev)
-  const currSig = signaturesByHash(curr)
+  const prevInfo = objectInfoByHash(prev)
+  const currInfo = objectInfoByHash(curr)
   const changed = new Set()
-  for (const [hash, sig] of currSig) {
-    if (prevSig.has(hash) && prevSig.get(hash) !== sig) changed.add(hash)
+  for (const [hash, info] of currInfo) {
+    if (prevInfo.has(hash) && prevInfo.get(hash).sig !== info.sig) changed.add(hash)
   }
   return changed
 }
 
-function signaturesByHash(step) {
-  const sigs = new Map()
+/** identityHash -> { sig, type } for every heap object/collection reachable
+ * from a step's call stack. `sig` is a cheap shallow signature (direct
+ * field/element leaf literals) used to detect mutation; `type` is carried
+ * alongside so callers that need to describe an object (e.g. "a ListNode
+ * just went out of scope") don't have to re-walk the tree a second time. */
+function objectInfoByHash(step) {
+  const info = new Map()
   const walk = (value) => {
     if (!value) return
     if (value.valueKind === 'object') {
-      if (!sigs.has(value.identityHash)) {
-        sigs.set(value.identityHash, value.fields.map((f) => `${f.name}=${shallow(f.value)}`).join(','))
+      if (!info.has(value.identityHash)) {
+        const sig = value.fields.map((f) => `${f.name}=${shallow(f.value)}`).join(',')
+        info.set(value.identityHash, { sig, type: value.type })
         value.fields.forEach((f) => walk(f.value))
       }
     } else if (value.valueKind === 'array' || value.valueKind === 'list') {
       value.elements.forEach(walk)
     } else if (value.valueKind === 'map') {
-      if (value.identityHash && !sigs.has(value.identityHash)) {
-        sigs.set(value.identityHash, value.entries.map((e) => `${shallow(e.key)}:${shallow(e.value)}`).join(','))
+      if (value.identityHash && !info.has(value.identityHash)) {
+        const sig = value.entries.map((e) => `${shallow(e.key)}:${shallow(e.value)}`).join(',')
+        info.set(value.identityHash, { sig, type: value.type })
       }
       value.entries.forEach((e) => {
         walk(e.key)
         walk(e.value)
       })
     } else if (value.valueKind === 'set') {
-      if (value.identityHash && !sigs.has(value.identityHash)) {
-        sigs.set(value.identityHash, value.elements.map(shallow).join(','))
+      if (value.identityHash && !info.has(value.identityHash)) {
+        const sig = value.elements.map(shallow).join(',')
+        info.set(value.identityHash, { sig, type: value.type })
       }
       value.elements.forEach(walk)
     }
@@ -248,7 +279,7 @@ function signaturesByHash(step) {
     if (frame.thisObject) walk(frame.thisObject.value)
     frame.localVariables.forEach((v) => walk(v.value))
   })
-  return sigs
+  return info
 }
 
 function shallow(value) {
