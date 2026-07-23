@@ -8,6 +8,7 @@ import ListView from './ListView'
 import CollectionFallbackCard from './CollectionFallbackCard'
 import { Flashable, PopIn } from './StepChanges'
 import { fieldPath, indexPath } from './stepDiff'
+import { shortType } from './traceValue'
 
 function LeafBadge({ name, text, italic = false }) {
   return (
@@ -76,6 +77,77 @@ function ArrayBoxes({ name, value, path, pointers }) {
   )
 }
 
+// A 2D array/list (int[][], List<List<Integer>>, Python's list-of-lists -
+// which is 'list' at both levels, unlike Java) - true when every element is
+// itself an array/list, not just "has at least one nested collection".
+function isMatrix(value) {
+  if ((value.valueKind !== 'array' && value.valueKind !== 'list') || value.elements.length === 0) return false
+  return value.elements.every((el) => el.valueKind === 'array' || el.valueKind === 'list')
+}
+
+function rowElements(row) {
+  return row.valueKind === 'array' || row.valueKind === 'list' ? row.elements : null
+}
+
+// Renders a genuine row/column grid instead of ArrayBoxes/ListView's default
+// "nested boxes inside boxes" for an array-of-arrays or list-of-lists - the
+// shape DP tables (Edit Distance, Unique Paths, Knapsack, LCS...) actually
+// have. A row that isn't itself a collection (a ragged/malformed row) still
+// renders honestly via the normal ValueRenderer path rather than being
+// forced into a grid cell it doesn't fit.
+function Matrix({ name, value, path }) {
+  const maxCols = value.elements.reduce((max, row) => Math.max(max, rowElements(row)?.length ?? 0), 0)
+  // JDI reports a 2D array's componentType as itself an array type ("int[]"),
+  // so building "int[]" + "[3]" naively doubles up the brackets - strip the
+  // trailing "[]" first so this reads as "int[3][3]", not "int[][3][]".
+  const label =
+    value.valueKind === 'array'
+      ? `${value.componentType.replace(/\[\]$/, '')}[${value.length}][${maxCols}]`
+      : `${shortType(value.type)} of lists`
+
+  return (
+    <div className="space-y-1">
+      <div className="font-mono text-xs text-ink-soft">
+        {name}: {label}
+      </div>
+      <div className="inline-block overflow-x-auto rounded-md border border-line bg-paper-raised p-2">
+        <div className="flex">
+          <span className="w-6 shrink-0" />
+          {Array.from({ length: maxCols }, (_, c) => (
+            <span key={c} className="w-8 shrink-0 text-center font-mono text-[10px] text-ink-soft">
+              {c}
+            </span>
+          ))}
+        </div>
+        {value.elements.map((row, r) => {
+          const rowPath = path != null ? indexPath(path, r) : null
+          const els = rowElements(row)
+          return (
+            <div key={r} className="flex items-center">
+              <span className="w-6 shrink-0 pr-1 text-right font-mono text-[10px] text-ink-soft">{r}</span>
+              {els ? (
+                els.map((cell, c) => {
+                  const cellPath = rowPath != null ? indexPath(rowPath, c) : null
+                  return (
+                    <Flashable key={c} path={cellPath}>
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center border border-line font-mono text-xs text-ink">
+                        <ValueRenderer name="" declaredType="" value={cell} depth={1} visited={new Set()} path={cellPath} />
+                      </div>
+                    </Flashable>
+                  )
+                })
+              ) : (
+                <ValueRenderer name="" declaredType="" value={row} depth={1} visited={new Set()} path={rowPath} />
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {value.truncated && <div className="font-mono text-xs text-ink-soft italic">… truncated</div>}
+    </div>
+  )
+}
+
 function GenericObjectCard({ name, value, depth, visited, path }) {
   const [isExpanded, setIsExpanded] = useState(depth < 1)
 
@@ -126,14 +198,22 @@ function ValueRenderer({ name, declaredType, value, depth = 0, visited, path = n
       return <LeafBadge name={name} text={`<${value.reason}>`} italic />
 
     case 'array':
-      return <ArrayBoxes name={name} value={value} declaredType={declaredType} path={path} pointers={pointers} />
+      return isMatrix(value) ? (
+        <Matrix name={name} value={value} path={path} />
+      ) : (
+        <ArrayBoxes name={name} value={value} declaredType={declaredType} path={path} pointers={pointers} />
+      )
 
     case 'map':
       return <MapView name={name} value={value} path={path} />
     case 'set':
       return <SetView name={name} value={value} path={path} />
     case 'list':
-      return <ListView name={name} value={value} path={path} pointers={pointers} />
+      return isMatrix(value) ? (
+        <Matrix name={name} value={value} path={path} />
+      ) : (
+        <ListView name={name} value={value} path={path} pointers={pointers} />
+      )
 
     case 'object': {
       // Boxed primitive wrappers (Integer, Long, ...) render as their inner
