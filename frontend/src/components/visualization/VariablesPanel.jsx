@@ -2,10 +2,12 @@ import { selectCurrentFrame, useExecutionStore } from '../../store/executionStor
 import ValueRenderer from './ValueRenderer'
 import { StepChangesProvider } from './StepChanges'
 import { useStepChanges } from './useStepChanges'
+import { buildPointerMap } from './pointerAnalysis'
 
 function VariablesPanel() {
   const frame = useExecutionStore(selectCurrentFrame)
   const changes = useStepChanges()
+  const pointerMap = buildPointerMap(frame)
 
   return (
     <div className="rounded-lg border border-line bg-paper-raised p-4">
@@ -31,6 +33,7 @@ function VariablesPanel() {
                   declaredType={frame.thisObject.declaredType}
                   value={frame.thisObject.value}
                   path="this"
+                  pointers={pointerMap[frame.thisObject.name]}
                 />
               )}
               {frame.localVariables.map((variable) => (
@@ -40,6 +43,7 @@ function VariablesPanel() {
                   declaredType={variable.declaredType}
                   value={variable.value}
                   path={variable.name}
+                  pointers={pointerMap[variable.name]}
                 />
               ))}
             </div>

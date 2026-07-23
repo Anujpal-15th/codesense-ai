@@ -1,4 +1,4 @@
-import ValueRenderer from './ValueRenderer'
+import ValueRenderer, { PointerBadges } from './ValueRenderer'
 import { shortType } from './traceValue'
 import { PopIn } from './StepChanges'
 import { indexPath } from './stepDiff'
@@ -6,7 +6,7 @@ import { indexPath } from './stepDiff'
 // Semantic view of a java.util.List / ordered Collection: indexed element boxes
 // (from ListSummary). Mirrors the array box layout. Keyed by index (order is the
 // list's identity); an appended slot pops in, a changed slot flashes.
-function ListView({ name, value, path = null }) {
+function ListView({ name, value, path = null, pointers }) {
   const { type, size, elements, truncated } = value
 
   return (
@@ -26,6 +26,7 @@ function ListView({ name, value, path = null }) {
                   <ValueRenderer name="" declaredType="" value={element} depth={1} visited={new Set()} path={cellPath} />
                 </div>
                 <div className="mt-0.5 font-mono text-[10px] text-ink-soft">{index}</div>
+                <PointerBadges names={pointers?.[index]} />
               </PopIn>
             )
           })}

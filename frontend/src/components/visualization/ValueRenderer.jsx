@@ -26,7 +26,28 @@ function CycleBadge({ name, type, identityHash }) {
   )
 }
 
-function ArrayBoxes({ name, value, path }) {
+// `pointers` (optional): { [index]: string[] } - names of sibling int/long
+// variables in this same frame whose value currently equals that index. See
+// pointerAnalysis.js - a factual "these variables equal this index right
+// now" marker, not a guess about which variables are "really" pointers.
+// Exported so ListView (a separate box-per-index layout) can reuse it.
+export function PointerBadges({ names }) {
+  if (!names || names.length === 0) return null
+  return (
+    <div className="mt-0.5 flex flex-wrap justify-center gap-0.5">
+      {names.map((n) => (
+        <span
+          key={n}
+          className="rounded bg-primary/15 px-1 font-mono text-[9px] leading-tight font-semibold text-primary"
+        >
+          {n}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function ArrayBoxes({ name, value, path, pointers }) {
   return (
     <div className="space-y-1">
       <div className="font-mono text-xs text-ink-soft">
@@ -43,6 +64,7 @@ function ArrayBoxes({ name, value, path }) {
                 </div>
               </Flashable>
               <div className="mt-0.5 font-mono text-[10px] text-ink-soft">{index}</div>
+              <PointerBadges names={pointers?.[index]} />
             </PopIn>
           )
         })}
@@ -90,7 +112,7 @@ function GenericObjectCard({ name, value, depth, visited, path }) {
   )
 }
 
-function ValueRenderer({ name, declaredType, value, depth = 0, visited, path = null }) {
+function ValueRenderer({ name, declaredType, value, depth = 0, visited, path = null, pointers }) {
   const seen = visited ?? new Set()
 
   switch (value.valueKind) {
@@ -104,14 +126,14 @@ function ValueRenderer({ name, declaredType, value, depth = 0, visited, path = n
       return <LeafBadge name={name} text={`<${value.reason}>`} italic />
 
     case 'array':
-      return <ArrayBoxes name={name} value={value} declaredType={declaredType} path={path} />
+      return <ArrayBoxes name={name} value={value} declaredType={declaredType} path={path} pointers={pointers} />
 
     case 'map':
       return <MapView name={name} value={value} path={path} />
     case 'set':
       return <SetView name={name} value={value} path={path} />
     case 'list':
-      return <ListView name={name} value={value} path={path} />
+      return <ListView name={name} value={value} path={path} pointers={pointers} />
 
     case 'object': {
       // Boxed primitive wrappers (Integer, Long, ...) render as their inner
