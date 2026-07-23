@@ -34,6 +34,15 @@ cors:
   # server-side, so the original browser origin still reaches us).
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,https://codesense-ai-phi.vercel.app}
 
+user-identity:
+  # Signs the server-issued X-User-Id (see UserIdentityService) so the
+  # backend only ever honors ids it actually minted, not arbitrary
+  # client-supplied strings. Left blank here on purpose - an ephemeral
+  # per-process secret is generated automatically when unset (logged at
+  # startup). Set USER_IDENTITY_SECRET to a long random value in production
+  # so issued ids - and the history scoped to them - survive a restart/deploy.
+  secret: ${USER_IDENTITY_SECRET:}
+
 llm:
   provider: ${LLM_PROVIDER:github-models}   # anthropic | gemini | ollama | github-models
 
@@ -67,6 +76,14 @@ rate-limit:
     capacity: ${RATE_LIMIT_EXECUTIONS_CAPACITY:10}
     refill-tokens: ${RATE_LIMIT_EXECUTIONS_REFILL_TOKENS:10}
     refill-period-seconds: ${RATE_LIMIT_EXECUTIONS_REFILL_PERIOD_SECONDS:60}
+  # Single-record GET reads (/api/analyses/{id}, /api/executions/{id}) - a
+  # plain DB read, so a much higher allowance than the POST endpoints above;
+  # this is generic abuse/resource protection, not an authorization boundary
+  # (see RateLimitFilter's javadoc).
+  history-reads:
+    capacity: ${RATE_LIMIT_HISTORY_READS_CAPACITY:120}
+    refill-tokens: ${RATE_LIMIT_HISTORY_READS_REFILL_TOKENS:120}
+    refill-period-seconds: ${RATE_LIMIT_HISTORY_READS_REFILL_PERIOD_SECONDS:60}
 
 execution:
   sandbox:

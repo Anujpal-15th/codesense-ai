@@ -1,40 +1,77 @@
+import { API_BASE_URL } from './apiBase'
+
 const STORAGE_KEY = 'codesense-user-id'
 
-function generateId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID()
-  }
-  // Fallback for contexts without crypto.randomUUID (very old browsers, or
-  // non-secure-context iframes where the API is unavailable) - doesn't need
-  // to be cryptographically strong, just unique enough to not collide.
-  return `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-}
-
-// Session-based identity with no login: a random id generated once per
-// browser and persisted in localStorage, sent as the X-User-Id header on
-// every request so the backend can scope history to "whoever submitted it."
-// Deliberately module-level (computed once, not inside the function) so every
-// caller in this tab session gets the same id even if localStorage access
-// races - the value is read/written exactly once per page load.
+// Session-based identity with no login: the backend mints a signed id
+// (see UserIdentityService/IdentityController on the server) the first time
+// this tab needs one, this caches it in localStorage, and every request
+// after that sends it back as the X-User-Id header so the backend can scope
+// history to "whoever submitted it."
+//
+// Previously this file generated the id itself (crypto.randomUUID()) and the
+// backend trusted whatever string arrived verbatim - meaning any string
+// typed into the header worked exactly as well as a real id. Now the id is
+// always something the server actually issued and signed; an old, pre-this-
+// change value in localStorage (no signature - detected by the missing ".")
+// is treated as stale and replaced.
 let cachedId = null
+let pendingFetch = null
 
-export function getUserId() {
-  if (cachedId) return cachedId
+function readCached() {
   try {
     const existing = window.localStorage?.getItem(STORAGE_KEY)
-    if (existing) {
-      cachedId = existing
-      return cachedId
-    }
-    const generated = generateId()
-    window.localStorage?.setItem(STORAGE_KEY, generated)
-    cachedId = generated
-    return cachedId
+    // A signed id always contains "<uuid>.<signature>" - a bare UUID from
+    // before this change has no ".", so it's recognized as stale rather than
+    // sent to a backend that will just reject it anyway.
+    return existing && existing.includes('.') ? existing : null
   } catch {
-    // localStorage unavailable (privacy mode, disabled storage) - fall back to
-    // an in-memory id for this page load so requests still carry *a* header,
-    // just one that won't persist across reloads.
-    cachedId = generateId()
+    return null
+  }
+}
+
+function writeCache(id) {
+  try {
+    window.localStorage?.setItem(STORAGE_KEY, id)
+  } catch {
+    // localStorage unavailable (privacy mode, disabled storage) - the id
+    // still works for this page load via `cachedId`, it just won't persist.
+  }
+}
+
+async function issueUserId() {
+  try {
+    const res = await fetch(`${API_BASE_URL}/identity`)
+    if (!res.ok) throw new Error(`identity request failed: ${res.status}`)
+    const data = await res.json()
+    writeCache(data.userId)
+    return data.userId
+  } catch {
+    // Backend unreachable at startup (offline, cold start). Falls back to an
+    // unsigned local id so requests still carry *something* rather than
+    // throwing - the backend's UserIdentityFilter treats an unsigned/invalid
+    // id exactly like no id at all (anonymous), so this just means "no
+    // history persisted this session" instead of a broken UI.
+    return `unsigned-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  }
+}
+
+export async function getUserId() {
+  if (cachedId) return cachedId
+
+  const existing = readCached()
+  if (existing) {
+    cachedId = existing
     return cachedId
   }
+
+  // Concurrent callers (both api instances' interceptors can fire around the
+  // same time on first load) share one in-flight fetch instead of each
+  // minting/requesting their own id.
+  if (!pendingFetch) {
+    pendingFetch = issueUserId().finally(() => {
+      pendingFetch = null
+    })
+  }
+  cachedId = await pendingFetch
+  return cachedId
 }

@@ -9,7 +9,8 @@ record RateLimitProperties(
         boolean enabled,
         List<String> trustedProxies,
         BucketLimit analyses,
-        BucketLimit executions
+        BucketLimit executions,
+        BucketLimit historyReads
 ) {
     record BucketLimit(long capacity, long refillTokens, long refillPeriodSeconds) {
     }

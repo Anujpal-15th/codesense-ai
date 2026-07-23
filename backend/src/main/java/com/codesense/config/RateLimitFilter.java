@@ -18,12 +18,23 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 /**
  * Per-IP token-bucket limiting for the two expensive POST endpoints
  * ({@code /api/analyses} costs an external LLM call, {@code /api/executions}
- * compiles + spawns a JVM). GET endpoints (history reads) are deliberately
- * not limited here - they're plain DB reads.
+ * compiles + spawns a JVM), plus a generous limit on the single-record GET
+ * endpoints ({@code /api/analyses/{id}}, {@code /api/executions/{id}}).
+ *
+ * <p>The GET limit is <b>not</b> a cross-user-data-leak defense - both
+ * endpoints already scope by {@code findByIdAndUserId}, so a wrong id or a
+ * mismatched X-User-Id 404s regardless, and the caller's own summary
+ * endpoint already hands back every id they're allowed to read, so there's
+ * nothing worth "enumerating" beyond what the caller can already see
+ * directly. It's plain abuse/resource protection - a client hammering
+ * thousands of single-record reads per second is still unwanted DB load,
+ * same as any other endpoint. The summary list endpoints stay unlimited (a
+ * single cheap query each, not id-driven).
  *
  * <p>In-memory only (Caffeine cache of IP -&gt; Bucket, evicted on access
  * idle), not backed by the project's existing (otherwise-unused) Redis
@@ -44,13 +55,18 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
 
+    private static final Pattern HISTORY_BY_ID_PATH =
+            Pattern.compile("^/api/(?:analyses|executions)/\\d+$");
+
     private final RateLimitProperties properties;
     private final ObjectMapper objectMapper;
     private final Set<String> trustedProxies;
     private final Bandwidth analysesLimit;
     private final Bandwidth executionsLimit;
+    private final Bandwidth historyReadsLimit;
     private final Cache<String, Bucket> analysesBuckets;
     private final Cache<String, Bucket> executionsBuckets;
+    private final Cache<String, Bucket> historyReadsBuckets;
 
     public RateLimitFilter(RateLimitProperties properties, ObjectMapper objectMapper) {
         this.properties = properties;
@@ -58,8 +74,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
         this.trustedProxies = Set.copyOf(properties.trustedProxies());
         this.analysesLimit = toBandwidth(properties.analyses());
         this.executionsLimit = toBandwidth(properties.executions());
+        this.historyReadsLimit = toBandwidth(properties.historyReads());
         this.analysesBuckets = newBucketCache();
         this.executionsBuckets = newBucketCache();
+        this.historyReadsBuckets = newBucketCache();
     }
 
     private static Bandwidth toBandwidth(RateLimitProperties.BucketLimit limit) {
@@ -89,7 +107,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
-        Bandwidth limit = buckets == analysesBuckets ? analysesLimit : executionsLimit;
+        Bandwidth limit = selectLimit(buckets);
 
         String clientIp = resolveClientIp(request);
         Bucket bucket = buckets.get(clientIp, key -> Bucket.builder().addLimit(limit).build());
@@ -110,17 +128,29 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private Cache<String, Bucket> selectBucketCache(HttpServletRequest request) {
-        if (!"POST".equalsIgnoreCase(request.getMethod())) {
-            return null;
-        }
+        String method = request.getMethod();
         String path = request.getRequestURI();
-        if ("/api/analyses".equals(path)) {
-            return analysesBuckets;
-        }
-        if ("/api/executions".equals(path)) {
-            return executionsBuckets;
+        if ("POST".equalsIgnoreCase(method)) {
+            if ("/api/analyses".equals(path)) {
+                return analysesBuckets;
+            }
+            if ("/api/executions".equals(path)) {
+                return executionsBuckets;
+            }
+        } else if ("GET".equalsIgnoreCase(method) && HISTORY_BY_ID_PATH.matcher(path).matches()) {
+            return historyReadsBuckets;
         }
         return null;
+    }
+
+    private Bandwidth selectLimit(Cache<String, Bucket> buckets) {
+        if (buckets == analysesBuckets) {
+            return analysesLimit;
+        }
+        if (buckets == executionsBuckets) {
+            return executionsLimit;
+        }
+        return historyReadsLimit;
     }
 
     private String resolveClientIp(HttpServletRequest request) {
