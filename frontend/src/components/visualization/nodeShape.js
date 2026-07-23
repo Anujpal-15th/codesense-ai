@@ -42,6 +42,20 @@ export function findField(objectSummary, names) {
   return objectSummary.fields.find((f) => names.includes(f.name))
 }
 
+/**
+ * Python's tracer has no real enclosing class for module-level code (Python
+ * just doesn't have one), so it hardcodes className to the literal string
+ * "main" for every single frame - unlike Java, where the class name is
+ * always the user's own class (or a generated "Main"), never a bare
+ * lowercase placeholder. Showing "main.functionName()" for every Python
+ * frame reads as a real class name that doesn't exist anywhere in the
+ * user's code, so it's omitted for that one synthetic case - Java's real
+ * class name is never hidden.
+ */
+export function frameQualifier(frame) {
+  return frame.className === 'main' ? frame.methodName : `${frame.className}.${frame.methodName}`
+}
+
 const BOXED_PRIMITIVE_TYPES = new Set([
   'java.lang.Integer',
   'java.lang.Long',

@@ -3,7 +3,7 @@ import { selectCurrentStep, useExecutionStore } from '../../store/executionStore
 import InfoToggle from './InfoToggle'
 import { staggerDelaySeconds, POP_IN_DURATION_SECONDS } from './staggerDelay'
 import { useStepChanges } from './useStepChanges'
-import { boxedInnerValue } from './nodeShape'
+import { boxedInnerValue, frameQualifier } from './nodeShape'
 import { shortType } from './traceValue'
 
 // A boxed Integer/Long/etc. used to show as just "java.lang.Integer #55" - a
@@ -53,9 +53,9 @@ function collectObjectRefs(step) {
   }
 
   step.callStack.forEach((frame) => {
-    const frameLabel = `${frame.className}.${frame.methodName}`
-    if (frame.thisObject) walk(frame.thisObject.value, `${frameLabel}.this`)
-    frame.localVariables.forEach((v) => walk(v.value, `${frameLabel}.${v.name}`))
+    const label = frameQualifier(frame)
+    if (frame.thisObject) walk(frame.thisObject.value, `${label}.this`)
+    frame.localVariables.forEach((v) => walk(v.value, `${label}.${v.name}`))
   })
 
   return [...refs.values()]

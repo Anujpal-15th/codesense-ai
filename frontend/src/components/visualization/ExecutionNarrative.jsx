@@ -2,6 +2,7 @@ import { selectCurrentFrame, selectCurrentStep, useExecutionStore } from '../../
 import ValueRenderer from './ValueRenderer'
 import { useStepChanges } from './useStepChanges'
 import { didExitingFrameGoDeeper, isRecursiveMethod } from './recursionAnalysis'
+import { frameQualifier } from './nodeShape'
 
 // Selects tracedSource - not workspaceStore's executedSource - deliberately.
 // tracedSource is frozen at the moment the trace arrived, so this narration
@@ -70,8 +71,8 @@ function buildNarration(step, frame, code, wentDeeper) {
     return {
       text:
         args.length > 0
-          ? `Entered ${frame.className}.${frame.methodName}() — called with ${args.join(', ')}`
-          : `Entered ${frame.className}.${frame.methodName}() — no arguments`,
+          ? `Entered ${frameQualifier(frame)}() — called with ${args.join(', ')}`
+          : `Entered ${frameQualifier(frame)}() — no arguments`,
     }
   }
 
@@ -94,7 +95,7 @@ function buildNarration(step, frame, code, wentDeeper) {
         : wentDeeper === true
           ? ' — done after its own deeper call(s) resolved'
           : ''
-    return { text: `Returned from ${frame.className}.${frame.methodName}()${suffix}` }
+    return { text: `Returned from ${frameQualifier(frame)}()${suffix}` }
   }
 
   return null

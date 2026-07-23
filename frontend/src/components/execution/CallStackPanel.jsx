@@ -4,6 +4,7 @@ import InfoToggle from '../visualization/InfoToggle'
 import { staggerDelaySeconds, POP_IN_DURATION_SECONDS } from '../visualization/staggerDelay'
 import { useStepChanges } from '../visualization/useStepChanges'
 import { didExitingFrameGoDeeper, frameStoryState, isRecursiveMethod } from '../visualization/recursionAnalysis'
+import { frameQualifier } from '../visualization/nodeShape'
 
 function frameClassName(state) {
   if (state === 'returning') return 'bg-highlight-ink/10 text-highlight-ink'
@@ -74,7 +75,7 @@ function CallStackPanel() {
                   className={`flex items-center justify-between gap-2 rounded px-2 py-1 font-mono text-sm ${frameClassName(state)}`}
                 >
                   <span>
-                    {frame.className}.{frame.methodName}():{frame.lineNumber}
+                    {frameQualifier(frame)}():{frame.lineNumber}
                   </span>
                   <span className="text-[10px] font-semibold tracking-wide uppercase opacity-70">
                     {frameLabel(state, index === 0 && isBaseCase)}
