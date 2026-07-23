@@ -12,6 +12,7 @@ import ExecutionNarrative from '../components/visualization/ExecutionNarrative'
 import MemoryView from '../components/visualization/MemoryView'
 import RecursionBadge from '../components/visualization/RecursionBadge'
 import VariablesPanel from '../components/visualization/VariablesPanel'
+import VisualizeLegend from '../components/visualization/VisualizeLegend'
 import { validateSubmission } from '../lib/codeValidation'
 import { useAnalysisStore } from '../store/analysisStore'
 import { useExecutionStore } from '../store/executionStore'
@@ -368,6 +369,7 @@ function WorkspacePage() {
             {activeTab === 'visualize' &&
               (trace ? (
                 <div className="space-y-4">
+                  <VisualizeLegend />
                   <OutcomeBanner />
                   <RecursionBadge />
                   <ExecutionNarrative />
