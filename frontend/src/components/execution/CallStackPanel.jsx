@@ -68,7 +68,16 @@ function CallStackPanel() {
               const state = frameStoryState(index, step.eventType)
               return (
                 <motion.li
-                  key={`${frame.className}.${frame.methodName}-${index}`}
+                  // Depth-from-bottom, not array index: pushing a frame on
+                  // top shifts every existing frame's INDEX by +1, but its
+                  // depth (distance from main()) doesn't change - same
+                  // reasoning as newFrameDepths just above. Keying by index
+                  // would make React treat "the frame now sitting at
+                  // position 2" as the same element across a push/pop, even
+                  // though it's really a different call - misfiring the
+                  // pop-in animation, especially during recursion where many
+                  // frames share the same className.methodName.
+                  key={`frame-depth-${depth}`}
                   initial={isNew ? { opacity: 0, y: -6, scale: 0.95 } : false}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   transition={{ duration: POP_IN_DURATION_SECONDS, delay: staggerDelaySeconds(rank) }}
