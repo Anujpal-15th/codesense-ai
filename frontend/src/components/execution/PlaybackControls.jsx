@@ -9,6 +9,8 @@ function PlaybackControls() {
   const play = useExecutionStore((state) => state.play)
   const pause = useExecutionStore((state) => state.pause)
   const goToStep = useExecutionStore((state) => state.goToStep)
+  const jumpToNextChange = useExecutionStore((state) => state.jumpToNextChange)
+  const jumpToPrevChange = useExecutionStore((state) => state.jumpToPrevChange)
 
   if (!trace) return null
 
@@ -16,6 +18,16 @@ function PlaybackControls() {
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-line bg-paper-raised p-4">
+      <button
+        type="button"
+        onClick={jumpToPrevChange}
+        disabled={currentStepIndex === 0}
+        title="Jump to the previous step where something actually changed"
+        className="uiverse-button-outline font-mono text-sm"
+      >
+        ⏮ Change
+      </button>
+
       <button
         type="button"
         onClick={stepBackward}
@@ -41,6 +53,16 @@ function PlaybackControls() {
         className="uiverse-button-outline font-mono text-sm"
       >
         Step →
+      </button>
+
+      <button
+        type="button"
+        onClick={jumpToNextChange}
+        disabled={currentStepIndex >= lastIndex}
+        title="Jump to the next step where something actually changes"
+        className="uiverse-button-outline font-mono text-sm"
+      >
+        Change ⏭
       </button>
 
       <input

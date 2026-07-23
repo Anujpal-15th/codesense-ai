@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { getExecutionHistoryById, getExecutionHistorySummaries, submitExecution } from '../api/executionApi'
+import { computeStepChanges } from '../components/visualization/stepDiff'
 
 function extractErrorMessage(error) {
   return error.response?.data?.error ?? error.message ?? 'Something went wrong'
@@ -8,6 +9,17 @@ function extractErrorMessage(error) {
 const AUTO_ADVANCE_INTERVAL_MS = 600
 
 let playbackIntervalId = null
+
+// See jumpToNextChange/jumpToPrevChange below. A call/return is always
+// "interesting" (the call stack itself just changed shape, regardless of
+// variable values); a plain LINE step only counts when something actually
+// changed or was added transitioning into it.
+function isInterestingStep(trace, index) {
+  const step = trace.steps[index]
+  if (step.eventType !== 'LINE') return true
+  const changes = computeStepChanges(trace, index)
+  return changes.changed.size > 0 || changes.added.size > 0
+}
 
 export const useExecutionStore = create((set, get) => ({
   isLoading: false,
@@ -118,6 +130,40 @@ export const useExecutionStore = create((set, get) => ({
   stepBackward: () => {
     const { currentStepIndex } = get()
     set({ currentStepIndex: Math.max(0, currentStepIndex - 1) })
+  },
+
+  /**
+   * Skips forward/backward past "boring" steps - a LINE step where nothing
+   * actually changed (a loop's condition check, a line that only reads
+   * values) - landing on the next step that's actually worth looking at: a
+   * real value change, a new collection entry, or a call/return (always
+   * interesting regardless of variable changes, since the call stack itself
+   * just changed shape). Reuses the exact same diff computation that already
+   * drives the flash animations - "interesting" here means "the same thing
+   * the UI would flash," not a separate heuristic.
+   */
+  jumpToNextChange: () => {
+    const { trace, currentStepIndex } = get()
+    if (!trace) return
+    for (let i = currentStepIndex + 1; i < trace.steps.length; i++) {
+      if (isInterestingStep(trace, i)) {
+        set({ currentStepIndex: i })
+        return
+      }
+    }
+    set({ currentStepIndex: trace.steps.length - 1 })
+  },
+
+  jumpToPrevChange: () => {
+    const { trace, currentStepIndex } = get()
+    if (!trace) return
+    for (let i = currentStepIndex - 1; i >= 0; i--) {
+      if (isInterestingStep(trace, i)) {
+        set({ currentStepIndex: i })
+        return
+      }
+    }
+    set({ currentStepIndex: 0 })
   },
 
   play: () => {
