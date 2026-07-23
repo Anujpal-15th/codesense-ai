@@ -1,11 +1,11 @@
 import { motion } from 'framer-motion'
 import { findField } from './nodeShape'
 
-const LEAF_SLOT = 56 // horizontal space per leaf - wide enough that two adjacent r=20 circles never touch
-const ROW_HEIGHT = 70
-const NODE_RADIUS = 20
-const TOP_MARGIN = 30
-const SIDE_MARGIN = 30
+const LEAF_SLOT = 40 // horizontal space per leaf - wide enough that two adjacent r=14 circles never touch
+const ROW_HEIGHT = 50
+const NODE_RADIUS = 14 // ~0.75cm diameter on screen
+const TOP_MARGIN = 20
+const SIDE_MARGIN = 20
 
 function renderLeafText(value) {
   if (!value) return '?'
@@ -112,7 +112,7 @@ function renderPositioned(pos, seen, elements, occurrenceCounts) {
   elements.push(
     <motion.g key={key} layout transition={{ duration: 0.3 }}>
       <circle cx={x} cy={y} r={NODE_RADIUS} fill={alreadyDrawn ? 'var(--color-highlight-ink)' : 'var(--color-ink)'} />
-      <text x={x} y={y + 4} textAnchor="middle" fill="var(--color-paper-raised)" fontSize="12" fontFamily="monospace">
+      <text x={x} y={y + 3} textAnchor="middle" fill="var(--color-paper-raised)" fontSize="9" fontFamily="monospace">
         {renderLeafText(valField?.value)}
       </text>
     </motion.g>,
@@ -162,7 +162,11 @@ function TreeView({ rootName, rootValue }) {
     <div className="space-y-1">
       <div className="font-mono text-xs text-ink-soft">{rootName}: tree</div>
       <div className="overflow-x-auto rounded-lg border border-line bg-paper-raised">
-        <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full min-w-[300px]">
+        {/* Fixed pixel width/height (not w-full) - w-full would stretch the
+            viewBox to fill the container, magnifying the small nodes right
+            back up regardless of NODE_RADIUS. maxWidth still lets it shrink
+            on narrow viewports without ever growing past its natural size. */}
+        <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} style={{ maxWidth: '100%' }}>
           {elements}
         </svg>
       </div>
