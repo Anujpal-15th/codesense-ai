@@ -7,9 +7,10 @@ import java.util.function.Supplier;
 
 /**
  * Retries a single LLM HTTP call when the provider returns 429 (rate
- * limited) - and only then. Any other status (bad auth, malformed request,
- * provider outage) is a real failure that retrying won't fix, so it's
- * rethrown on the first attempt exactly as before this existed.
+ * limited) or 503 (transient overload) - and only then. Any other status
+ * (bad auth, malformed request, a real outage) is a failure that retrying
+ * won't fix, so it's rethrown on the first attempt exactly as before this
+ * existed.
  *
  * <p>Honors the provider's own {@code Retry-After} header when present -
  * exact, not a guess at how long the window is - falling back to a short
@@ -35,14 +36,15 @@ final class RetryingLlmCall {
             try {
                 return httpCall.get();
             } catch (RestClientResponseException e) {
-                boolean rateLimited = e.getStatusCode().value() == 429;
+                int status = e.getStatusCode().value();
+                boolean retryable = status == 429 || status == 503;
                 boolean lastAttempt = attempt == MAX_ATTEMPTS - 1;
-                if (!rateLimited || lastAttempt) {
+                if (!retryable || lastAttempt) {
                     throw e;
                 }
                 long delay = retryDelayMillis(e, attempt);
-                log.info("{} API rate-limited (429) - retrying in {}ms (attempt {}/{})",
-                        providerName, delay, attempt + 2, MAX_ATTEMPTS);
+                log.info("{} API returned {} - retrying in {}ms (attempt {}/{})",
+                        providerName, status, delay, attempt + 2, MAX_ATTEMPTS);
                 sleep(delay);
             }
         }
