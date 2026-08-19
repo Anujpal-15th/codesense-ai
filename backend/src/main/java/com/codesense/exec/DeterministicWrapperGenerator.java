@@ -219,6 +219,18 @@ class DeterministicWrapperGenerator {
         boolean treeNodeAlreadyDefined = classes.stream().anyMatch(c -> c.name().equals("TreeNode"));
 
         StringBuilder src = new StringBuilder();
+        // Pasted LeetCode-style solutions routinely omit `import java.util.*`
+        // (LeetCode's own editor supplies it via a hidden template) - without
+        // this, a snippet using Map/List/TreeMap/etc. with no imports of its
+        // own fails to COMPILE ("cannot find symbol"), which ExecutionService
+        // reads as "the deterministic wrap doesn't apply" and falls back to
+        // the LLM wrapper - for a perfectly ordinary snippet whose argument
+        // synthesis above succeeded fine. Always-safe to prepend: an unused
+        // wildcard import is a no-op, and it coexists with any explicit
+        // imports sourceCode already has (java.util.stream is a separate
+        // package - a `java.util.*` wildcard does not cover it).
+        src.append("import java.util.*;\n");
+        src.append("import java.util.stream.*;\n\n");
         src.append(stripPublicModifiers(sourceCode, classes));
         src.append("\n\n");
         if (needsListNode && !listNodeAlreadyDefined) {
