@@ -1,8 +1,19 @@
 // Shared across every store/page that calls the backend directly (executionStore,
 // analysisStore, AnalysisDetailPage, ExecutionHistoryLoaderPage) - was
 // copy-pasted byte-for-byte in all four places before this extraction.
+//
+// Must always return a string: every caller sets it straight into store state
+// that gets rendered as a JSX child (<InlineError>{error}</InlineError> and
+// similar). The backend's own errors are always {error: "string"} - but when
+// the backend is unreachable, Vercel's rewrite returns ITS OWN gateway error
+// page instead, shaped {error: {code, message}} - an object, not a string.
+// Passing that straight through crashed the whole app (React refuses to
+// render an object as text) instead of showing a plain inline message.
 export function extractErrorMessage(error) {
-  return error.response?.data?.error ?? error.message ?? 'Something went wrong'
+  const raw = error.response?.data?.error
+  if (typeof raw === 'string' && raw) return raw
+  if (raw && typeof raw.message === 'string') return raw.message
+  return error.message ?? 'Something went wrong'
 }
 
 // Thrown by a store action instead of applying its response when a newer
