@@ -15,21 +15,21 @@ class AnthropicLlmClient implements LlmClient {
     private final RestClient anthropicRestClient;
     private final ObjectMapper objectMapper;
     private final String model;
+    private final String apiKey;
 
     AnthropicLlmClient(RestClient anthropicRestClient,
                         ObjectMapper objectMapper,
                         @Value("${anthropic.model}") String model,
                         @Value("${anthropic.api-key}") String apiKey) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("ANTHROPIC_API_KEY must be set when llm.provider=anthropic");
-        }
         this.anthropicRestClient = anthropicRestClient;
         this.objectMapper = objectMapper;
         this.model = model;
+        this.apiKey = apiKey;
     }
 
     @Override
     public AnalysisResult analyze(String codeSnippet) {
+        LlmClientSupport.requireApiKey("Claude", apiKey, "ANTHROPIC_API_KEY");
         ClaudeMessageRequest request = new ClaudeMessageRequest(
                 model,
                 1024,
@@ -44,6 +44,7 @@ class AnthropicLlmClient implements LlmClient {
 
     @Override
     public String completeRaw(String systemPrompt, String userMessage) {
+        LlmClientSupport.requireApiKey("Claude", apiKey, "ANTHROPIC_API_KEY");
         ClaudeMessageRequest request = new ClaudeMessageRequest(
                 model,
                 4096,

@@ -15,21 +15,21 @@ class GithubModelsLlmClient implements LlmClient {
     private final RestClient githubModelsRestClient;
     private final ObjectMapper objectMapper;
     private final String model;
+    private final String token;
 
     GithubModelsLlmClient(RestClient githubModelsRestClient,
                            ObjectMapper objectMapper,
                            @Value("${github-models.model}") String model,
                            @Value("${github-models.token}") String token) {
-        if (token == null || token.isBlank()) {
-            throw new IllegalStateException("GITHUB_MODELS_TOKEN must be set when llm.provider=github-models");
-        }
         this.githubModelsRestClient = githubModelsRestClient;
         this.objectMapper = objectMapper;
         this.model = model;
+        this.token = token;
     }
 
     @Override
     public AnalysisResult analyze(String codeSnippet) {
+        LlmClientSupport.requireApiKey("GitHub Models", token, "GITHUB_MODELS_TOKEN");
         GithubModelsChatRequest request = new GithubModelsChatRequest(
                 model,
                 List.of(
@@ -45,6 +45,7 @@ class GithubModelsLlmClient implements LlmClient {
 
     @Override
     public String completeRaw(String systemPrompt, String userMessage) {
+        LlmClientSupport.requireApiKey("GitHub Models", token, "GITHUB_MODELS_TOKEN");
         GithubModelsChatRequest request = new GithubModelsChatRequest(
                 model,
                 List.of(

@@ -44,7 +44,11 @@ user-identity:
   secret: ${USER_IDENTITY_SECRET:}
 
 llm:
-  provider: ${LLM_PROVIDER:github-models}   # anthropic | gemini | ollama | github-models
+  # github-models was retired by GitHub on 2026-07-30 and was previously the
+  # default here - a fresh deploy, or a deploy that lost its LLM_PROVIDER env
+  # var, silently fell back to a dead API. gemini is what production actually
+  # runs (see systemd's GEMINI_API_KEY), so it's the safe default now.
+  provider: ${LLM_PROVIDER:gemini}   # anthropic | gemini | ollama | github-models
 
 anthropic:
   api-key: ${ANTHROPIC_API_KEY:}

@@ -26,6 +26,27 @@ final class LlmClientSupport {
     }
 
     /**
+     * Guards a provider call on its API key being configured, WITHOUT the
+     * caller having validated this in its constructor. Each provider client
+     * used to throw {@link IllegalStateException} from its constructor on a
+     * blank key - but that runs during Spring bean creation, so it aborted
+     * the ENTIRE application context, taking down every endpoint (Run,
+     * History, identity - not just analysis) over one missing/wrong key.
+     * Checking here instead, at the moment a request actually needs the
+     * provider, means a misconfigured LLM only fails the analysis feature -
+     * everything else keeps working. Throws the same
+     * {@link AnalysisFailedException} every other provider failure in this
+     * class throws, so it's a normal 502 with a readable message, not a
+     * crash.
+     */
+    static void requireApiKey(String providerName, String apiKey, String envVarName) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new AnalysisFailedException(
+                    providerName + " is not configured (" + envVarName + " is not set)");
+        }
+    }
+
+    /**
      * Performs {@code httpCall} (with 429 retry), then applies
      * {@code textExtractor} to pull the raw completion text out of the
      * provider-specific response shape. Any failure along the way - a

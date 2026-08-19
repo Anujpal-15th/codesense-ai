@@ -15,21 +15,21 @@ class GeminiLlmClient implements LlmClient {
     private final RestClient geminiRestClient;
     private final ObjectMapper objectMapper;
     private final String model;
+    private final String apiKey;
 
     GeminiLlmClient(RestClient geminiRestClient,
                      ObjectMapper objectMapper,
                      @Value("${gemini.model}") String model,
                      @Value("${gemini.api-key}") String apiKey) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalStateException("GEMINI_API_KEY must be set when llm.provider=gemini");
-        }
         this.geminiRestClient = geminiRestClient;
         this.objectMapper = objectMapper;
         this.model = model;
+        this.apiKey = apiKey;
     }
 
     @Override
     public AnalysisResult analyze(String codeSnippet) {
+        LlmClientSupport.requireApiKey("Gemini", apiKey, "GEMINI_API_KEY");
         GeminiRequest request = new GeminiRequest(
                 new GeminiSystemInstruction(List.of(new GeminiPart(SYSTEM_PROMPT))),
                 List.of(new GeminiContent("user", List.of(new GeminiPart(codeSnippet)))),
@@ -43,6 +43,7 @@ class GeminiLlmClient implements LlmClient {
 
     @Override
     public String completeRaw(String systemPrompt, String userMessage) {
+        LlmClientSupport.requireApiKey("Gemini", apiKey, "GEMINI_API_KEY");
         GeminiRequest request = new GeminiRequest(
                 new GeminiSystemInstruction(List.of(new GeminiPart(systemPrompt))),
                 List.of(new GeminiContent("user", List.of(new GeminiPart(userMessage)))),
